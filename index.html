@@ -61,7 +61,16 @@
   details>summary{list-style:none;cursor:pointer}details>summary::-webkit-details-marker{display:none}
   .fade{animation:fade .3s ease-out}@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
   input[type=checkbox]{accent-color:#2563eb}
-  @media print{.no-print{display:none!important}body.printing section{display:block!important}.card{box-shadow:none}}
+  #print-report{display:none}
+  @media print{
+    body.printing>*:not(#print-report){display:none!important}
+    body.printing #print-report{display:block!important;font-family:'Inter',system-ui,sans-serif;color:#1e293b;font-size:11pt}
+    #print-report h1{color:#1d4ed8;font-size:20pt;margin:0}#print-report h2{color:#1e3a8a;font-size:13pt;border-bottom:2px solid #dbeafe;padding-bottom:3px;margin:18px 0 6px;break-after:avoid}
+    #print-report .m{color:#64748b;font-size:9pt}#print-report table{width:100%;border-collapse:collapse}#print-report td,#print-report th{padding:5px 4px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}#print-report tr{break-inside:avoid}
+    #print-report .r{text-align:right;white-space:nowrap}#print-report small{color:#64748b}
+    #print-report .ks{display:flex;flex-wrap:wrap;gap:6px}#print-report .k{background:#eff6ff;border-radius:8px;padding:8px 12px;font-size:9pt;color:#475569;min-width:120px;-webkit-print-color-adjust:exact;print-color-adjust:exact}#print-report .k b{display:block;font-size:14pt;color:#1d4ed8}
+    @page{margin:14mm}
+  }
 </style>
 </head>
 <body class="min-h-screen text-slate-800 antialiased">
@@ -96,10 +105,11 @@
   <div class="max-w-5xl mx-auto px-4 py-3 flex gap-2 justify-center flex-wrap">
     <button id="btnEdit" class="btn-ghost text-sm">✎ Modifier mes réponses</button>
     <button id="btnSave" class="btn-ghost text-sm">💾 Enregistrer</button>
-    <button id="btnReport" class="btn-primary text-sm">⬇ Rapport</button>
+    <button id="btnReport" class="btn-primary text-sm">⬇ Rapport PDF</button>
   </div>
 </div>
 <div id="modal-root"></div>
+<div id="print-report"></div>
 <footer class="no-print max-w-5xl mx-auto px-4 pb-24 text-[11px] text-slate-400">
   Outil pédagogique d'aide à la réflexion : ne constitue pas un conseil en investissement personnalisé (CIF) ni un conseil fiscal. Lecture PDF : pdf.js (Mozilla, licence Apache 2.0).
 </footer>
@@ -201,8 +211,9 @@ const CREDIT_RULES = [
 ];
 const CAT_LABELS = Object.fromEntries([...RULES, ...CREDIT_RULES].map(r => [r.cat, r.label]));
 CAT_LABELS.autre = 'Autres dépenses'; CAT_LABELS.autre_credit = 'Autres crédits';
+CAT_LABELS.provisions = 'Provisions (taxe foncière, copro…)';
 CAT_LABELS.coloc_recu = 'Remboursement coloc (reçu)'; CAT_LABELS.coloc_envoye = 'Remboursement coloc (envoyé)';
-const CAT_GRP = Object.fromEntries(RULES.map(r => [r.cat, r.grp]));
+const CAT_GRP = Object.fromEntries(RULES.map(r => [r.cat, r.grp])); CAT_GRP.provisions = 'contrainte';
 const GENERIC_KW = new Set(['ASSURANCE', 'ASSURANCES', 'LOYER', 'TAXE', 'IMPOT', 'IMPOTS', 'MUTUELLE', 'LIVRET', 'EPARGNE', 'RETRAIT', 'DAB', 'STATION', 'RESTAURANT', 'BRASSERIE', 'BOULANGERIE', 'CABINET', 'DR', 'MEDECIN', 'PHARMACIE', 'PARKING', 'EAU DE', 'TRAITEMENT', 'PAIE', 'SALAIRE']);
 
 const has = (n, kw) => n.includes(' ' + kw + ' ');
@@ -554,8 +565,13 @@ function analyseCredits(credits, d, today = new Date()) {
       A.push({ prio: 2, titre: `Rembourser par anticipation ? (${nom})`, texte: `Taux de ${c.taux} %, supérieur à ce que rapporte une épargne sans risque (hypothèse ${secu} %). Avec ${Math.round(surplus).toLocaleString('fr-FR')} € d'épargne au-delà de votre précaution, un remboursement partiel est probablement rentable. Des indemnités peuvent s'appliquer, plafonnées par la loi : demandez le chiffrage à l'organisme.` });
     else if (c.taux != null && c.taux <= secu && c.type === 'immo')
       A.push({ prio: 3, titre: `Crédit immobilier à ${c.taux} % : pas de remboursement anticipé`, texte: 'Votre taux est inférieur au rendement d\'une épargne sans risque : mieux vaut garder votre épargne placée que rembourser plus vite.' });
-    if (c.type === 'immo') A.push({ prio: 2, titre: 'Assurance emprunteur : à faire comparer', texte: `Depuis la loi Lemoine (2022), elle est résiliable à tout moment, sans frais, pour un contrat à garanties équivalentes.${c.assurance ? ` Vous payez ${Math.round(c.assurance)} €/mois, soit ${Math.round(c.assurance * 12)} €/an.` : ''} Une délégation d'assurance coûte souvent bien moins cher que le contrat de la banque, surtout pour les emprunteurs jeunes et non-fumeurs.` });
+    if (false) A.push({ prio: 2, titre: '', texte: `Depuis la loi Lemoine (2022), elle est résiliable à tout moment, sans frais, pour un contrat à garanties équivalentes.${c.assurance ? ` Vous payez ${Math.round(c.assurance)} €/mois, soit ${Math.round(c.assurance * 12)} €/an.` : ''} Une délégation d'assurance coûte souvent bien moins cher que le contrat de la banque, surtout pour les emprunteurs jeunes et non-fumeurs.` });
     if (restant != null && restant <= 24 && c.mensualite) A.push({ prio: 3, titre: `${nom} : fin dans ${restant} mois`, texte: `À partir de ${fin.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}, ${Math.round(c.mensualite)} €/mois se libèrent : programmez dès maintenant de les verser sur votre épargne pour ne pas les « absorber » dans les dépenses.` });
+  }
+  const immo = credits.filter(c => c.type === 'immo');
+  if (immo.length) {
+    const ass = immo.reduce((s, c) => s + (+c.assurance || 0), 0);
+    A.push({ prio: 2, titre: `Assurance emprunteur : à faire comparer${immo.length > 1 ? ` (${immo.length} prêts immobiliers)` : ''}`, texte: `Depuis la loi Lemoine (2022), elle est résiliable à tout moment, sans frais, pour un contrat à garanties équivalentes${immo.length > 1 ? ', prêt par prêt' : ''}.${ass ? ` Vous payez ${Math.round(ass)} €/mois au total, soit ${Math.round(ass * 12)} €/an.` : ''} Une délégation d'assurance coûte souvent bien moins cher que le contrat de la banque, surtout pour les emprunteurs jeunes et non-fumeurs.` });
   }
   return A;
 }
@@ -570,13 +586,13 @@ const PERIODS = [
   { key: 'annuel', min: 340, max: 390, factor: 1 / 12 }
 ];
 function detectRecurring(txs) {
-  const groups = {};
+  const groups = {}, shortSpan = months(txs) < 2;
   for (const t of txs) if (t.amount < 0 && ['contrainte', 'abonnement', 'courant'].includes(t.grp)) {
     (groups[t.merchant] = groups[t.merchant] || []).push(t);
   }
   const out = [];
   for (const [merchant, list] of Object.entries(groups)) {
-    if (list.length < 2) continue;
+    if (list.length < 2 && !shortSpan) continue;
     const sorted = [...list].sort((a, b) => a.date - b.date);
     const known = sorted[0].grp === 'abonnement' || sorted[0].grp === 'contrainte';
     if (sorted[0].grp === 'courant' && sorted[0].cat !== 'autre') continue; // courses, resto… : non pertinents
@@ -586,6 +602,13 @@ function detectRecurring(txs) {
       const prev = base[base.length - 1];
       if (prev && (t.date - prev.date) / DAY < 5 && Math.abs(Math.abs(t.amount) - Math.abs(prev.amount)) <= Math.abs(prev.amount) * 0.05) dupes.push([prev, t]);
       else base.push(t);
+    }
+    if (base.length === 1 && shortSpan && (known || / (PRLV|PRELEVEMENT) /.test(normText(base[0].label)))) {
+      const t = base[0], v = Math.abs(t.amount);
+      out.push({ id: 'r_' + normText(merchant).trim().replace(/\s/g, '_'), merchant, cat: t.cat, grp: t.grp, catLabel: CAT_LABELS[t.cat] || t.cat, sampleLabel: t.label,
+        periodicite: 'mensuel (estimé)', occurrences: 1, dernierMontant: round2(v), premierMontant: round2(v), mensuel: round2(v), annuel: round2(v * 12),
+        variable: false, identifie: t.cat !== 'autre', dernierDate: t.date, dupes, hausse: 0, estime: true });
+      continue;
     }
     if (base.length < 2 || (!known && base.length < 3)) continue;
     const iv = base.slice(1).map((t, i) => (t.date - base[i].date) / DAY);
@@ -624,7 +647,11 @@ function insuranceSubtype(label) {
   if (/ (SCOLAIRE) /.test(n)) return 'scolaire';
   return null;
 }
-function months(txs) { return Math.max(1, new Set(txs.map(t => monthKey(t.date))).size); }
+function months(txs) {
+  if (!txs.length) return 1;
+  let a = Infinity, b = -Infinity; for (const t of txs) { const v = +t.date; if (v < a) a = v; if (v > b) b = v; }
+  return Math.max(1, Math.round(((b - a) / DAY + 1) / 30.44));
+}
 
 // mp(r) = coût mensuel à votre charge (quote-part si la dépense est partagée)
 const mp = r => r.mensuel * (r.part ?? 1);
@@ -732,6 +759,8 @@ function diagnose(txs, profile, ctx = {}) {
   const envoye = -txs.filter(t => t.cat === 'coloc_envoye').reduce((s, t) => s + t.amount, 0) / nb;
   const coloc = ctx.part != null && ctx.part < 1 ? { attendu: partageAutres - externesPart, reel: recu - envoye, recu, envoye, ecart: (recu - envoye) - (partageAutres - externesPart) } : null;
 
+  const prov = Math.min(+profile.provisionCharges || 0, parGrp.epargne);
+  if (prov > 0) { parGrp.epargne -= prov; parGrp.contrainte += prov; parCat.provisions = prov; parCat.epargne = Math.max(0, (parCat.epargne || 0) - prov); }
   const { contrainte: contraintes, abonnement: abonnements, courant, frais, epargne: epargneVersee } = parGrp;
   const revenusDetectes = txs.filter(t => t.amount > 0 && t.grp === 'revenu').reduce((s, t) => s + t.amount, 0) / nb;
   const revenusDeclares = (+profile.net1 || 0) + (+profile.net2 || 0) + (+profile.autresRevenus || 0);
@@ -846,7 +875,7 @@ function investPlan(d, p, inv) {
     finals: { pessimiste: scen('pessimiste').at(-1), median: med.at(-1), optimiste: scen('optimiste').at(-1), verses: verses.at(-1), fraisChers: fraisChers.at(-1) } };
 }
 
-global.Engine = { CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
+global.Engine = { months, CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="ui">
@@ -912,16 +941,17 @@ const choices = (k, opts, multi = false, cols = 1) => `<div class="grid gap-3 ${
 const why = t => `<details class="mt-4 text-sm"><summary class="text-blue-700 font-medium">Pourquoi cette question ?</summary><p class="mt-2 text-slate-600 bg-blue-50/60 rounded-xl p-3">${t}</p></details>`;
 
 /* ---------- Fenêtres intégrées (les fenêtres système sont bloquées dans la page) ---------- */
-function modal({ title, body = '', input = null, ok = 'Valider', cancel = 'Annuler', danger = false }) {
+function modal({ title, body = '', input = null, inputLabel = '', field = null, ok = 'Valider', cancel = 'Annuler', danger = false }) {
   return new Promise(res => {
     $('#modal-root').innerHTML = `<div class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-center p-4 fade">
       <form class="card w-full max-w-md" id="mform"><h3 class="text-lg font-semibold">${title}</h3><div class="text-sm text-slate-600 mt-2">${body}</div>
-      ${input ? `<input id="minput" type="${input}" class="inp mt-4" autocomplete="off">` : ''}
+      ${field ? `<label class="block mt-4"><span class="text-sm font-medium text-slate-700">${field.label}</span><input id="mfield" type="text" class="inp" value="${esc(field.value || '')}" placeholder="${esc(field.ph || '')}" autocomplete="off"></label>` : ''}
+      ${input ? `<label class="block mt-4">${inputLabel ? `<span class="text-sm font-medium text-slate-700">${inputLabel}</span>` : ''}<input id="minput" type="${input}" class="inp ${inputLabel ? '' : '!mt-0'}" autocomplete="off"></label>` : ''}
       <div class="flex justify-end gap-2 mt-5">${cancel ? `<button type="button" id="mcancel" class="btn-ghost">${cancel}</button>` : ''}<button class="btn-primary ${danger ? '!bg-none !bg-red-600' : ''}">${ok}</button></div></form></div>`;
     const close = v => { $('#modal-root').innerHTML = ''; res(v); };
-    $('#mform').onsubmit = e => { e.preventDefault(); close(input ? $('#minput').value : true); };
+    $('#mform').onsubmit = e => { e.preventDefault(); close(field ? { field: $('#mfield').value, value: input ? $('#minput').value : null } : input ? $('#minput').value : true); };
     const c = $('#mcancel'); if (c) c.onclick = () => close(null);
-    const i = $('#minput'); if (i) setTimeout(() => i.focus(), 50);
+    const i = $('#mfield') || $('#minput'); if (i) setTimeout(() => i.focus(), 50);
   });
 }
 function toast(t, tone = 'blue') {
@@ -997,10 +1027,10 @@ function renderWizard() {
       </div>
       <div class="mt-5 text-sm text-blue-900 bg-blue-50 border border-blue-100 rounded-2xl p-4 text-left">🔒 <b>Vos documents ne quittent jamais cet appareil.</b> Ils sont lus directement par votre navigateur : aucun envoi, aucun compte à créer.</div>
       <div class="flex flex-col gap-3 mt-7">
-        ${saved ? '<button id="btnResume" class="btn-primary text-base py-3.5">↺ Reprendre mon audit enregistré</button>' : ''}
-        <button id="btnStart" class="${saved ? 'btn-ghost justify-center' : 'btn-primary'} text-base py-3.5">Commencer →</button>
+        <button id="btnStart" class="btn-primary text-base py-3.5">${saved ? '+ Nouvel audit' : 'Commencer →'}</button>
         <button id="btnDemo" class="text-sm text-blue-700 hover:underline mt-1">Essayer avec un exemple fictif</button>
-      </div></div>`;
+      </div>${auditsListHtml()}
+      ${saved ? '<p class="text-xs text-slate-400 mt-3 text-left">Un audit par personne ou par scénario (ex. « Moi », « Parents », « Achat appartement ») : chacun a son propre code.</p>' : ''}</div>`;
   }
   else if (id === 'banque') h = screenWrap('Étape 1', 'Dans quelles banques avez-vous des comptes ?', `
     <p class="text-slate-500 mt-2">Plusieurs choix possibles. On vous montrera comment récupérer les relevés de chacune.</p>
@@ -1050,12 +1080,12 @@ function docStatus() {
 }
 function renderDocuments() {
   const st = docStatus(), cov = st.cov;
-  const covTxt = st.releve ? `${cov.complets} mois${cov.debut ? ` · ${moisLabel(cov.debut)} → ${moisLabel(cov.fin)}` : ''}${cov.manquants.length ? ` · <span class="text-amber-700">manque ${cov.manquants.map(moisLabel).join(', ')}</span>` : ''}` : '3 mois minimum, 6 idéalement';
+  const covTxt = st.releve ? `${E.months(S.raw)} mois${cov.debut ? ` · ${moisLabel(cov.debut)} → ${moisLabel(cov.fin)}` : ''}${cov.manquants.length ? ` · <span class="text-amber-700">manque ${cov.manquants.map(moisLabel).join(', ')}</span>` : ''}` : '3 mois minimum, 6 idéalement';
   const item = (k, ico, title, sub, done, level) => `<details class="card hl !p-0 overflow-hidden" ${k === 'releve' && !done ? 'open' : ''}>
     <summary class="flex items-center gap-3 p-4"><span class="step-dot ${done ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}">${done ? '✓' : ico}</span>
       <span class="flex-1"><span class="flex items-center gap-2 font-semibold text-slate-900">${title} ${badge(level, level === 'Obligatoire' ? 'blue' : level === 'Facultatif' ? 'slate' : 'indigo')}</span><span class="block text-xs text-slate-500 mt-0.5">${sub}</span></span><span class="text-blue-600 text-sm">Comment ? ▾</span></summary>
     <div class="px-4 pb-4 border-t border-slate-100">${S.banques.length > 1 && k !== 'avis' && k !== 'paie' ? `<div class="flex flex-wrap gap-2 mt-3">${S.banques.map(b => { const n = (BANQUES.find(x => x[0] === b) || [, b])[1], on = b === (S.tutoBank && S.banques.includes(S.tutoBank) ? S.tutoBank : S.banques[0]); return `<button type="button" data-tbank="${b}" class="text-xs px-3 py-1.5 rounded-full border transition ${on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300'}">${esc(n)}</button>`; }).join('')}</div>` : ''}${tutoSteps(k)}</div></details>`;
-  const warnCov = st.releve && cov.complets < 3;
+  const warnCov = st.releve && E.months(S.raw) < 3;
   return screenWrap('Étape 2', 'Ajoutez vos documents', `
     <p class="text-slate-500 mt-2">Tout dans la même zone, en vrac : l'app reconnaît chaque document toute seule.</p>
     <label class="drop block text-center p-6 mt-6" id="dropZone">
@@ -1071,7 +1101,7 @@ function renderDocuments() {
       ${item('paie', '5', 'Fiche(s) de paie', st.paie ? 'Lue(s) ✓' : 'Net avant impôt, primes', st.paie, 'Facultatif')}
     </div>
     ${S.docs.length ? `<div class="mt-6"><div class="text-sm font-semibold text-slate-700 mb-2">Documents ajoutés</div><ul class="space-y-2">${S.docs.map((d, i) => `<li class="card !p-3 flex items-start gap-3 text-sm"><span class="text-lg">${{ releve: '🏦', epargne: '🐷', avis: '🧾', paie: '💶', credit: '🏷️', erreur: '⚠️' }[d.kind] || '📄'}</span><span class="flex-1 min-w-0"><span class="block font-medium truncate">${esc(d.name)}</span><span class="block text-xs ${d.ok ? 'text-slate-500' : 'text-red-600'}">${d.detail}</span>${(d.warnings || []).map(w => `<span class="block text-xs text-amber-700">⚠ ${esc(w)}</span>`).join('')}</span><button type="button" data-deldoc="${i}" class="text-slate-400 hover:text-red-600 px-1">✕</button></li>`).join('')}</ul></div>` : ''}
-    ${warnCov ? `<p class="text-sm text-amber-800 bg-amber-50 rounded-xl p-3 mt-4">Seulement ${cov.complets} mois : l'analyse sera possible mais moins fiable (abonnements trimestriels non détectés). 6 mois, c'est l'idéal.</p>` : ''}
+    ${warnCov ? `<p class="text-sm text-amber-800 bg-amber-50 rounded-xl p-3 mt-4">Seulement ${E.months(S.raw)} mois : l'analyse sera possible mais moins fiable (abonnements trimestriels non détectés). 6 mois, c'est l'idéal.</p>` : ''}
     ${pdfDebugHtml()}`, { disabled: !st.releve });
 }
 function pdfDebugHtml() {
@@ -1098,15 +1128,15 @@ function renderCompris() {
   return screenWrap('Étape 3', 'Voici ce que j\'ai compris', `
     <p class="text-slate-500 mt-2">Vérifiez et corrigez si besoin : c'est la base de tous les calculs.</p>
     <div class="space-y-3 mt-6">
-      ${row('📅', 'Période analysée', `${cov.complets} mois${cov.debut ? ` (${moisLabel(cov.debut)} → ${moisLabel(cov.fin)})` : ''} · ${S.raw.length} opérations`, '', '')}
+      ${row('📅', 'Période analysée', `${E.months(S.raw)} mois${cov.debut ? ` (${moisLabel(cov.debut)} → ${moisLabel(cov.fin)})` : ''} · ${S.raw.length} opérations`, '', '')}
       ${row('💶', 'Revenu net mensuel', p.net1 ? eur(+p.net1, 0) + (I.salaireJour ? ` <span class="text-sm font-normal text-slate-500">versé vers le ${I.salaireJour} du mois</span>` : '') : 'Non détecté', `<input type="number" inputmode="decimal" data-k="net1" value="${esc(p.net1)}" class="inp-sm w-36"> €/mois`, S.docs.some(d => d.kind === 'paie' && d.net) ? 'fiche de paie' : I.salaire ? 'relevés' : I.pension ? 'pension' : '')}
       ${I.autresRevenus ? row('🤝', 'Autres revenus réguliers (CAF, etc.)', eur(I.autresRevenus, 0) + '/mois', `<input type="number" inputmode="decimal" data-k="autresRevenus" value="${esc(p.autresRevenus)}" class="inp-sm w-36"> €/mois`, 'relevés') : ''}
       ${row('🏠', 'Logement', { locataire: 'Locataire', proprietaire_credit: 'Propriétaire avec crédit', proprietaire: 'Propriétaire', heberge: 'Hébergé' }[p.logement], `<select data-k="logement" class="inp-sm">${[['locataire', 'Locataire'], ['proprietaire_credit', 'Propriétaire avec crédit'], ['proprietaire', 'Propriétaire sans crédit'], ['heberge', 'Hébergé']].map(([v, l]) => `<option value="${v}" ${p.logement === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`, I.logement ? 'relevés' : '')}
       ${I.coloc ? row('👥', 'Colocation probable', `${I.coloc.nb} virements « ${esc(I.coloc.alias)} » repérés`, `<label class="flex items-center gap-2 text-sm"><input type="checkbox" id="cbColoc" ${isColoc() ? 'checked' : ''} class="w-4 h-4"> Oui, je suis en colocation</label>`, 'relevés') : ''}
       ${(() => { const dc = E.detectCredits(S.raw.map(t => E.categorize(t))); return dc.length ? row('🏷️', 'Crédits repérés sur vos relevés', dc.map(c => `${esc(c.organisme)} ${eur(c.mensualite, 0)}/mois`).join(' · '), '<span class="text-xs text-slate-500">Vous pourrez les compléter à l\'étape « Vos crédits ».</span>', 'relevés') : ''; })()}
       ${row('🐷', 'Épargne', ep.length ? ep.map(([k, l]) => `${l} ${eur(+p[k], 0)}`).join(' · ') : 'Aucun solde lu', ep.length ? '' : '<span class="text-xs text-slate-500">On vous la demandera dans un instant.</span>', ep.length ? 'relevés' : '')}
-      ${I.versementEpargne ? row('↪️', 'Versements vers l\'épargne', `≈ ${eur(I.versementEpargne, 0)}/mois`, '', 'relevés') : ''}
-      ${row('🧾', 'Impôt sur le revenu', p.rfr ? `RFR ${(+p.rfr).toLocaleString('fr-FR')} € · ${p.parts || '?'} part(s) · taux marginal ≈ ${t != null ? Math.round(t * 100) + ' %' : '?'}` : 'Avis non fourni', `<div class="flex gap-2 flex-wrap items-center text-sm">RFR <input type="number" inputmode="decimal" data-k="rfr" value="${esc(p.rfr)}" class="inp-sm w-32"> parts <input type="number" inputmode="decimal" data-k="parts" value="${esc(p.parts)}" class="inp-sm w-20"></div>`, p.rfr && S.docs.some(d => d.kind === 'avis' && d.ok) ? 'avis d\'impôt' : '')}
+      ${I.versementEpargne ? row('↪️', 'Virements vers vos livrets', `≈ ${eur(I.versementEpargne, 0)}/mois`, `<div class="text-sm text-slate-600">Dont <input type="number" inputmode="decimal" data-k="provisionCharges" value="${esc(p.provisionCharges ?? '')}" placeholder="0" class="inp-sm w-24"> €/mois mis de côté pour des <b>dépenses prévues</b> (taxe foncière, copro, assurance annuelle…)</div><p class="text-xs text-slate-400 mt-1">Cet argent n'est pas de l'épargne : il est déjà dépensé d'avance. Il sera compté dans vos charges.</p>`, 'relevés') : ''}
+      ${row('🧾', 'Tranche d\'imposition (facultatif)', p.rfr ? `RFR ${(+p.rfr).toLocaleString('fr-FR')} € · ${p.parts || '?'} part(s) · taux marginal ≈ ${t != null ? Math.round(t * 100) + ' %' : '?'}` : 'Non renseignée', `<p class="text-xs text-slate-500 mb-2">L'impôt est déjà prélevé à la source sur le salaire : rien à payer en plus ici. Ces deux chiffres de l'avis d'impôt servent seulement à estimer votre tranche, pour savoir si un PER ou un LEP vous intéresse.</p><div class="flex gap-2 flex-wrap items-center text-sm">Revenu fiscal de référence <input type="number" inputmode="decimal" data-k="rfr" value="${esc(p.rfr)}" class="inp-sm w-32"> parts <input type="number" inputmode="decimal" data-k="parts" value="${esc(p.parts)}" class="inp-sm w-20"></div>`, p.rfr && S.docs.some(d => d.kind === 'avis' && d.ok) ? 'avis d\'impôt' : '')}
     </div>`);
 }
 
@@ -1194,9 +1224,10 @@ function bindWizard() {
   if (dz) { dz.ondragover = e => { e.preventDefault(); dz.classList.add('drop-hover'); }; dz.ondragleave = () => dz.classList.remove('drop-hover'); dz.ondrop = e => { e.preventDefault(); dz.classList.remove('drop-hover'); handleFiles([...e.dataTransfer.files]); }; }
   const pr = $('#wPrev'); if (pr) pr.onclick = () => go(-1);
   const nx = $('#wNext'); if (nx) nx.onclick = () => go(1);
-  const st = $('#btnStart'); if (st) st.onclick = () => go(1);
+  const st = $('#btnStart'); if (st) st.onclick = () => { if (S.raw.length) { S = fresh(); } S.screen = 'banque'; render(); };
   const dm = $('#btnDemo'); if (dm) dm.onclick = loadDemo;
-  const rs = $('#btnResume'); if (rs) rs.onclick = restore;
+  v.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openAudit(b.dataset.open));
+  v.querySelectorAll('[data-delaudit]').forEach(b => b.onclick = () => deleteAudit(b.dataset.delaudit));
 }
 
 /* ---------- Lecture des documents (sur l'appareil) ---------- */
@@ -1290,40 +1321,71 @@ function removeDoc(i) {
   S.docs.splice(i, 1); S.applied = false; renderWizard();
 }
 
-/* ---------- Sauvegarde chiffrée sur l'appareil (AES-GCM, clé dérivée du code) ---------- */
-const SAVE_KEY = 'auditBudget.save.v1';
-const hasSave = () => { try { return !!localStorage.getItem(SAVE_KEY); } catch { return false; } };
-const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+/* ---------- Plusieurs audits enregistrés, chacun chiffré (AES-GCM, clé dérivée de son code) ---------- */
+const STORE_KEY = 'auditBudget.audits.v1', OLD_KEY = 'auditBudget.save.v1';
+function listAudits() {
+  try {
+    const L = JSON.parse(localStorage.getItem(STORE_KEY) || '[]'), old = localStorage.getItem(OLD_KEY);
+    if (old) { const o = JSON.parse(old); L.push({ id: 'a' + Date.now(), nom: 'Mon audit', ...o }); localStorage.setItem(STORE_KEY, JSON.stringify(L)); localStorage.removeItem(OLD_KEY); }
+    return L;
+  } catch { return []; }
+}
+const writeAudits = L => localStorage.setItem(STORE_KEY, JSON.stringify(L));
+const hasSave = () => listAudits().length > 0;
+const b64 = buf => { let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192)); return btoa(s); };
 const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 async function keyFrom(code, salt) {
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 async function save() {
-  const code = await modal({ title: '💾 Enregistrer sur cet appareil', body: 'Choisissez un code (6 caractères minimum). Il chiffre votre audit : sans lui, personne ne peut le lire, et il ne peut pas être récupéré en cas d\'oubli.', input: 'password', ok: 'Chiffrer et enregistrer' });
-  if (code == null) return; if (code.length < 6) return toast('Code trop court (6 caractères minimum).', 'red');
+  const r = await modal({ title: '💾 Enregistrer cet audit', body: 'Il reste sur cet appareil, chiffré par un code (6 caractères minimum). Sans ce code, personne ne peut le lire, et il ne peut pas être récupéré en cas d\'oubli.', field: { label: 'Nom de l\'audit', value: S.auditNom || '', ph: 'ex. Moi, Papa et Maman, Scénario achat…' }, input: 'password', inputLabel: 'Code', ok: 'Chiffrer et enregistrer' });
+  if (r == null) return;
+  const { field: nom, value: code } = r;
+  if (!code || code.length < 6) return toast('Code trop court (6 caractères minimum).', 'red');
   try {
     const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+    S.auditNom = (nom || '').trim() || 'Audit du ' + new Date().toLocaleDateString('fr-FR'); S.auditId = S.auditId || 'a' + Date.now();
     const { pdfDebug, ...keep } = S;
     const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await keyFrom(code, salt), new TextEncoder().encode(JSON.stringify(keep)));
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, salt: b64(salt), iv: b64(iv), data: b64(data), date: new Date().toISOString() }));
-    toast('✅ Audit chiffré et enregistré sur cet appareil.');
+    const L = listAudits().filter(x => x.id !== S.auditId);
+    L.unshift({ id: S.auditId, nom: S.auditNom, v: 2, salt: b64(salt), iv: b64(iv), data: b64(data), date: new Date().toISOString() });
+    writeAudits(L); toast(`✅ « ${esc(S.auditNom)} » chiffré et enregistré.`);
   } catch (e) { toast('Enregistrement impossible dans ce navigateur (' + esc(e.message) + ').', 'red'); }
 }
-async function restore() {
-  let blob; try { blob = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch { return toast('Aucune sauvegarde lisible.', 'red'); }
-  const code = await modal({ title: '↺ Reprendre mon audit', body: `Sauvegarde du ${new Date(blob.date).toLocaleDateString('fr-FR')}. Saisissez votre code.`, input: 'password', ok: 'Déverrouiller' });
+async function openAudit(id) {
+  const blob = listAudits().find(x => x.id === id); if (!blob) return;
+  const code = await modal({ title: `↺ ${esc(blob.nom)}`, body: `Enregistré le ${new Date(blob.date).toLocaleDateString('fr-FR')}. Saisissez son code.`, input: 'password', ok: 'Déverrouiller' });
   if (code == null) return;
   try {
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(blob.iv) }, await keyFrom(code, unb64(blob.salt)), unb64(blob.data));
     const st = JSON.parse(new TextDecoder().decode(plain));
-    st.raw.forEach(t => t.date = new Date(t.date)); if (!st.banques) st.banques = st.banque ? [st.banque] : []; S = { ...fresh(), ...st, device: detectDevice() };
-    toast('✅ Audit déverrouillé.'); render();
+    st.raw.forEach(t => t.date = new Date(t.date)); if (!st.banques) st.banques = st.banque ? [st.banque] : [];
+    S = { ...fresh(), ...st, device: detectDevice(), auditId: blob.id, auditNom: blob.nom };
+    toast(`✅ « ${esc(blob.nom)} » ouvert.`); render();
   } catch { toast('Code incorrect.', 'red'); }
 }
+async function deleteAudit(id) {
+  const blob = listAudits().find(x => x.id === id); if (!blob) return;
+  const ok = await modal({ title: 'Supprimer cet audit ?', body: `« ${esc(blob.nom)} » sera définitivement effacé de cet appareil.`, ok: 'Supprimer', danger: true });
+  if (!ok) return; writeAudits(listAudits().filter(x => x.id !== id)); if (S.auditId === id) S.auditId = null; render();
+}
+async function newAudit() {
+  if (S.raw.length && S.screen !== 'accueil') {
+    const ok = await modal({ title: 'Commencer un nouvel audit ?', body: 'L\'audit en cours sera fermé. Pensez à l\'enregistrer si vous voulez le retrouver.', ok: 'Nouvel audit', cancel: 'Annuler' });
+    if (!ok) return;
+  }
+  S = fresh(); S.screen = 'banque'; render();
+}
 async function wipe() {
-  const ok = await modal({ title: 'Tout effacer ?', body: 'Les données de la session et la sauvegarde chiffrée de cet appareil seront supprimées.', ok: 'Tout effacer', danger: true });
-  if (!ok) return; try { localStorage.removeItem(SAVE_KEY); } catch { } S = fresh(); render(); toast('Données effacées.');
+  const ok = await modal({ title: 'Tout effacer ?', body: 'L\'audit en cours et <b>tous les audits enregistrés</b> sur cet appareil seront supprimés.', ok: 'Tout effacer', danger: true });
+  if (!ok) return; try { localStorage.removeItem(STORE_KEY); localStorage.removeItem(OLD_KEY); } catch { } S = fresh(); render(); toast('Données effacées.');
+}
+function auditsListHtml() {
+  const L = listAudits(); if (!L.length) return '';
+  return `<div class="mt-7 text-left"><div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Mes audits enregistrés</div><div class="space-y-2">
+    ${L.map(a => `<div class="card hl !p-3 flex items-center gap-3"><span class="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 grid place-items-center">🔒</span><button type="button" data-open="${a.id}" class="flex-1 text-left"><span class="block font-semibold text-slate-900">${esc(a.nom)}</span><span class="block text-xs text-slate-500">Enregistré le ${new Date(a.date).toLocaleDateString('fr-FR')}</span></button><button type="button" data-open="${a.id}" class="btn-ghost !py-1.5 text-sm">Ouvrir</button><button type="button" data-delaudit="${a.id}" class="text-slate-400 hover:text-red-600 px-1">✕</button></div>`).join('')}
+  </div></div>`;
 }
 
 /* ---------- Résultats : onglets ---------- */
@@ -1357,7 +1419,7 @@ function renderAbonnements() {
       ${kpi('Prélèvements récurrents', R.length, `${R.filter(r => !r.identifie).length} non identifié(s)`)}
       ${kpi('Coût mensuel récurrent' + (coloc ? ' (votre part)' : ''), eur(totAbo), eur(totAbo * 12, 0) + ' / an')}
       ${kpi('Économies possibles', eur(plan.totalMensuel) + '<span class="text-sm font-normal">/mois</span>', `${eur(plan.totalAnnuel, 0)} / an${plan.totalPonctuel ? ` + ${eur(plan.totalPonctuel)} à récupérer` : ''}`, 'emerald')}
-      <div class="md:col-span-3 text-xs text-slate-500 card !p-3">Analyse sur <b>${d.nbMois} mois</b>. Cochez « Peu utilisé » sur les abonnements dont vous vous servez rarement : le plan et le score se recalculent.
+      <div class="md:col-span-3 text-xs text-slate-500 card !p-3">Analyse sur <b>${d.nbMois} mois</b>.${d.nbMois < 2 ? ' <span class="text-amber-700">Avec un seul mois, les abonnements sont estimés à partir des prélèvements du mois : ajoutez 3 à 6 mois pour une détection fiable (abonnements trimestriels, doublons, hausses de prix).</span>' : ''} Cochez « Peu utilisé » sur les abonnements dont vous vous servez rarement : le plan et le score se recalculent.
         ${coloc ? `<br>Colocation : <b>${nbColoc}</b> virement(s) de remboursement repérés et neutralisés. Cochez « Partagé » sur les dépenses que vous payez pour tous (votre part : ${(part * 100).toFixed(0)} %).` : ''}</div>
     </div>
     ${card(`<h2 class="font-semibold mb-3">Anomalies détectées (${anomalies.length})</h2>
@@ -1368,7 +1430,7 @@ function renderAbonnements() {
       <thead class="text-xs text-slate-500 text-left border-b"><tr><th class="py-2">Prestataire</th><th>Catégorie</th><th>Rythme</th><th class="text-right">Dernier</th><th class="text-right">€/mois${coloc ? ' (votre part)' : ''}</th><th class="text-right">€/an</th>${coloc ? '<th class="text-center">Partagé</th>' : ''}<th class="text-center">Peu utilisé</th></tr></thead>
       <tbody>${R.map(r => `<tr class="border-b last:border-0 ${S.flags[r.id] ? 'bg-emerald-50' : ''}">
         <td class="py-2"><div class="font-medium">${esc(r.merchant)} ${!r.identifie ? badge('à identifier', 'amber') : ''} ${r.hausse ? badge('+' + eur(r.hausse), 'red') : ''} ${r.dupes.length ? badge('doublon', 'red') : ''}</div><div class="text-xs text-slate-400 truncate max-w-[280px]">${esc(r.sampleLabel)}</div></td>
-        <td>${esc(r.catLabel)}</td><td>${r.periodicite}${r.variable ? ' <span class="text-xs text-slate-400">(variable)</span>' : ''}</td>
+        <td>${esc(r.catLabel)}</td><td>${r.periodicite}${r.estime ? ' ' + badge('à confirmer', 'amber') : ''}${r.variable ? ' <span class="text-xs text-slate-400">(variable)</span>' : ''}</td>
         <td class="text-right">${eur(r.dernierMontant, 2)}</td><td class="text-right font-medium">${eur(mp(r), 2)}${r.part < 1 ? `<div class="text-[11px] text-slate-400">sur ${eur(r.mensuel, 2)}</div>` : ''}</td><td class="text-right text-slate-500">${eur(mp(r) * 12, 0)}</td>
         ${coloc ? `<td class="text-center"><input type="checkbox" data-share="${esc(r.merchant)}" ${S.shared[r.merchant] ? 'checked' : ''} class="w-4 h-4 accent-sky-700"></td>` : ''}
         <td class="text-center">${r.grp === 'abonnement' || !r.identifie ? `<input type="checkbox" data-flag="${r.id}" ${S.flags[r.id] ? 'checked' : ''} class="w-4 h-4 accent-blue-700">` : '<span class="text-xs text-slate-300">—</span>'}</td></tr>`).join('') || '<tr><td colspan="8" class="py-3 text-slate-400">Aucun prélèvement récurrent détecté.</td></tr>'}</tbody></table></div>`)}
@@ -1526,35 +1588,27 @@ function renderStrategie() {
   document.querySelectorAll('[data-inv]').forEach(c => c.onchange = () => { inv[c.dataset.inv] = Math.max(0, +c.value || 0); renderStrategie(); });
 }
 
-/* ---------- Rapport téléchargeable (fichier HTML autonome, imprimable en PDF) ---------- */
-function reportHtml() {
+/* ---------- Rapport PDF : mise en page dédiée + impression « Enregistrer en PDF » (aucun fichier HTML exporté) ---------- */
+function reportBody() {
   const { anomalies, d, plan, recurring } = compute(), ENV = E.envelopes(d, S.profile), C = E.advise(d, S.profile);
-  const r = (l, v) => `<tr><td>${l}</td><td style="text-align:right"><b>${v}</b></td></tr>`;
-  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mon audit budget</title>
-<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#1e293b}h1{color:#1d4ed8}h2{border-bottom:2px solid #dbeafe;padding-bottom:4px;margin-top:28px;color:#1e3a8a}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:6px 4px;border-bottom:1px solid #e2e8f0;vertical-align:top;text-align:left}.k{display:inline-block;background:#eff6ff;border-radius:10px;padding:10px 14px;margin:4px;min-width:140px}.k b{display:block;font-size:20px;color:#1d4ed8}small{color:#64748b}</style></head><body>
-<h1>Mon audit budget</h1><small>Établi le ${new Date().toLocaleDateString('fr-FR')} sur ${d.nbMois} mois de relevés · document personnel</small>
-<h2>Synthèse</h2><div><span class="k">Revenus<b>${eur(d.revenus, 0)}</b></span><span class="k">Charges contraintes<b>${eur(d.contraintes + d.frais, 0)}</b></span><span class="k">Reste à vivre<b>${eur(d.resteAVivre, 0)}</b></span><span class="k">Capacité d'épargne<b>${eur(d.capaciteEpargne, 0)}</b></span><span class="k">Score de fuite<b>${plan.score}/100</b></span></div>
-<h2>Plan d'économies — ${eur(plan.totalMensuel)}/mois, ${eur(plan.totalAnnuel, 0)}/an</h2><table>${plan.items.map(i => `<tr><td><b>${esc(i.action)}</b><br><small>${esc(i.motif)}</small></td><td style="text-align:right;white-space:nowrap">${i.mensuel ? eur(i.mensuel) + '/mois' : ''}${i.ponctuel ? ' ' + eur(i.ponctuel) : ''}</td></tr>`).join('')}</table>
-<h2>Prélèvements récurrents</h2><table><tr><th>Prestataire</th><th>Rythme</th><th style="text-align:right">€/mois</th></tr>${recurring.map(x => `<tr><td>${esc(x.merchant)}<br><small>${esc(x.catLabel)}</small></td><td>${x.periodicite}</td><td style="text-align:right">${eur(x.mensuel * x.part, 2)}</td></tr>`).join('')}</table>
-<h2>Anomalies</h2><table>${anomalies.map(a => `<tr><td><b>${esc(a.titre)}</b><br><small>${esc(a.detail)}</small></td></tr>`).join('')}</table>
-${d.credits.length ? `<h2>Crédits — ${eur(d.credit, 0)}/mois, endettement ${pct(d.tauxEndettement)}</h2><table><tr><th>Crédit</th><th style="text-align:right">Mensualité</th><th style="text-align:right">Restant dû</th><th style="text-align:right">Taux</th></tr>${d.credits.map(c => `<tr><td>${esc(E.CREDIT_TYPES[c.type] || c.type)}<br><small>${esc(c.organisme || '')}</small></td><td style="text-align:right">${c.mensualite ? eur(+c.mensualite, 0) : '—'}</td><td style="text-align:right">${c.crd !== '' && c.crd != null ? eur(+c.crd, 0) : '—'}</td><td style="text-align:right">${c.taux !== '' && c.taux != null ? c.taux + ' %' : '—'}</td></tr>`).join('')}</table>` : ''}
-<h2>Épargne</h2><table>${r('Épargne disponible', eur(d.epargneDispo, 0))}${r('Objectif de précaution', eur(d.precautionCible, 0))}${ENV.map(e => `<tr><td><b>${esc(e.nom)}</b> — ${eur(e.montant, 0)}<br><small>${esc(e.note)}</small></td></tr>`).join('')}</table>
+  const r = (l, v) => `<tr><td>${l}</td><td class="r"><b>${v}</b></td></tr>`;
+  return `<h1>Mon audit budget${S.auditNom ? ' — ' + esc(S.auditNom) : ''}</h1><p class="m">Établi le ${new Date().toLocaleDateString('fr-FR')} sur ${d.nbMois} mois de relevés · document personnel</p>
+<h2>Synthèse</h2><div class="ks"><div class="k">Revenus<b>${eur(d.revenus, 0)}</b></div><div class="k">Charges contraintes<b>${eur(d.contraintes + d.frais, 0)}</b></div><div class="k">Reste à vivre<b>${eur(d.resteAVivre, 0)}</b></div><div class="k">Capacité d'épargne<b>${eur(d.capaciteEpargne, 0)}</b></div><div class="k">Score de fuite<b>${plan.score}/100</b></div></div>
+<h2>Plan d'économies : ${eur(plan.totalMensuel)}/mois, ${eur(plan.totalAnnuel, 0)}/an</h2><table>${plan.items.map(i => `<tr><td><b>${esc(i.action)}</b><br><small>${esc(i.motif)}</small></td><td class="r">${i.mensuel ? eur(i.mensuel) + '/mois' : ''}${i.ponctuel ? ' ' + eur(i.ponctuel) : ''}</td></tr>`).join('') || '<tr><td>Rien à optimiser.</td></tr>'}</table>
+<h2>Prélèvements récurrents</h2><table><tr><th>Prestataire</th><th>Rythme</th><th class="r">€/mois</th></tr>${recurring.map(x => `<tr><td>${esc(x.merchant)}<br><small>${esc(x.catLabel)}</small></td><td>${x.periodicite}</td><td class="r">${eur(x.mensuel * x.part, 2)}</td></tr>`).join('')}</table>
+${anomalies.length ? `<h2>Anomalies</h2><table>${anomalies.map(a => `<tr><td><b>${esc(a.titre)}</b><br><small>${esc(a.detail)}</small></td></tr>`).join('')}</table>` : ''}
+${d.credits.length ? `<h2>Crédits : ${eur(d.credit, 0)}/mois, endettement ${pct(d.tauxEndettement)}</h2><table><tr><th>Crédit</th><th class="r">Mensualité</th><th class="r">Restant dû</th><th class="r">Taux</th></tr>${d.credits.map(c => `<tr><td>${esc(E.CREDIT_TYPES[c.type] || c.type)}<br><small>${esc(c.organisme || '')}</small></td><td class="r">${c.mensualite ? eur(+c.mensualite, 0) : '—'}</td><td class="r">${c.crd !== '' && c.crd != null ? eur(+c.crd, 0) : '—'}</td><td class="r">${c.taux !== '' && c.taux != null ? c.taux + ' %' : '—'}</td></tr>`).join('')}</table>` : ''}
+<h2>Épargne</h2><table>${r('Épargne disponible', eur(d.epargneDispo, 0))}${r('Objectif de précaution', eur(d.precautionCible, 0))}${ENV.map(e => `<tr><td colspan="2"><b>${esc(e.nom)}</b> : ${eur(e.montant, 0)}<br><small>${esc(e.note)}</small></td></tr>`).join('')}</table>
 <h2>Priorités</h2><table>${C.map(c => `<tr><td><b>${esc(c.titre)}</b><br><small>${esc(c.texte)}</small></td></tr>`).join('')}</table>
-<p><small>Outil pédagogique, ne constitue pas un conseil en investissement personnalisé. Pour l'enregistrer en PDF : menu Imprimer → Enregistrer en PDF.</small></p></body></html>`;
+<p class="m">Outil pédagogique : ne constitue pas un conseil en investissement personnalisé.</p>`;
 }
 async function downloadReport() {
-  let dl = null; try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch { }
-  const html = reportHtml();
-  if (dl) {
-    try { await dl.save({ filename: 'mon-audit-budget.html', data: new Blob([html], { type: 'text/html' }) }); return toast('✅ Rapport enregistré : ouvrez-le puis Imprimer → PDF.'); }
-    catch (e) { try { await dl.save({ filename: 'mon-audit-budget.html', data: html }); return toast('✅ Rapport enregistré.'); } catch (e2) { if (e2 && /declin|cancel|abort/i.test(String(e2.message || e2.code))) return; } }
-  }
-  // repli : fichier local (hors page hébergée) puis copie du résumé
-  try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' })); a.download = 'mon-audit-budget.html'; document.body.appendChild(a); a.click(); a.remove(); }
-  catch { }
-  const { d, plan } = compute();
-  const sum = `Mon audit budget (${new Date().toLocaleDateString('fr-FR')})\nRevenus : ${eur(d.revenus, 0)}/mois\nCharges contraintes : ${eur(d.contraintes + d.frais, 0)}\nReste à vivre : ${eur(d.resteAVivre, 0)}\nCapacité d'épargne : ${eur(d.capaciteEpargne, 0)}/mois\nÉconomies possibles : ${eur(plan.totalMensuel)}/mois\n` + plan.items.map(i => `- ${i.action}${i.mensuel ? ' : ' + eur(i.mensuel) + '/mois' : ''}`).join('\n');
-  try { await navigator.clipboard.writeText(sum); toast('Résumé copié dans le presse-papiers.'); } catch { }
+  const el = $('#print-report'); el.innerHTML = reportBody();
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  toast('Dans la fenêtre d\'impression, choisissez « Enregistrer en PDF ».');
+  setTimeout(() => { try { window.print(); } catch { done(); toast('Impression indisponible ici : ouvrez l\'app depuis son lien GitHub.', 'red'); } setTimeout(done, 60000); }, 300);
 }
 
 /* ---------- Exemple fictif (colocation, 6 mois) ---------- */
@@ -1612,8 +1666,9 @@ $('#btnEdit').onclick = () => goTo('compris');
 $('#logo').onclick = () => { if (S.screen !== 'accueil') goTo(S.analysed ? 'resultats' : S.screen); };
 $('#btnMenu').onclick = async () => {
   $('#modal-root').innerHTML = `<div class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-end sm:place-items-center p-4 fade" id="mbg"><div class="card w-full max-w-sm space-y-2">
-    <button class="btn-ghost w-full justify-center" id="m1">⌂ Accueil</button>
-    ${S.analysed ? '<button class="btn-ghost w-full justify-center" id="m2">💾 Enregistrer sur cet appareil</button>' : ''}
+    <button class="btn-ghost w-full justify-center" id="m1">⌂ Accueil · mes audits</button>
+    <button class="btn-ghost w-full justify-center" id="m5">+ Nouvel audit</button>
+    ${S.raw.length ? '<button class="btn-ghost w-full justify-center" id="m2">💾 Enregistrer cet audit</button>' : ''}
     <button class="btn-ghost w-full justify-center !text-red-600" id="m3">🗑 Tout effacer</button>
     <button class="btn-ghost w-full justify-center" id="m4">Fermer</button></div></div>`;
   const close = () => $('#modal-root').innerHTML = '';
@@ -1622,6 +1677,7 @@ $('#btnMenu').onclick = async () => {
   if ($('#m2')) $('#m2').onclick = () => { close(); save(); };
   $('#m3').onclick = () => { close(); wipe(); };
   $('#m4').onclick = close;
+  $('#m5').onclick = () => { close(); newAudit(); };
 };
 render();
 try { if ('serviceWorker' in navigator && location.protocol === 'https:' && window.top === window) navigator.serviceWorker.register('sw.js'); } catch { }
