@@ -213,13 +213,13 @@ const CREDIT_RULES = [
 ];
 const CAT_LABELS = Object.fromEntries([...RULES, ...CREDIT_RULES].map(r => [r.cat, r.label]));
 CAT_LABELS.autre = 'Autres dépenses'; CAT_LABELS.autre_credit = 'Autres crédits';
-CAT_LABELS.provisions = 'Provisions (taxe foncière, copro…)'; CAT_LABELS.interne = 'Virements entre mes comptes'; CAT_LABELS.carte_total = 'Total carte à débit différé'; CAT_LABELS.indemnites = 'Indemnités & activités annexes'; CAT_LABELS.abo_autre = 'Autres abonnements'; CAT_LABELS.contrainte_autre = 'Autres charges fixes';
+CAT_LABELS.provisions = 'Provisions (taxe foncière, copro…)'; CAT_LABELS.interne = 'Virements entre mes comptes'; CAT_LABELS.loisirs = 'Loisirs, sorties, voyages'; CAT_LABELS.dons = 'Dons & cadeaux'; CAT_LABELS.remboursement = 'Remboursements reçus'; CAT_LABELS.carte_total = 'Total carte à débit différé'; CAT_LABELS.indemnites = 'Indemnités & activités annexes'; CAT_LABELS.abo_autre = 'Autres abonnements'; CAT_LABELS.contrainte_autre = 'Autres charges fixes';
 CAT_LABELS.coloc_recu = 'Remboursement coloc (reçu)'; CAT_LABELS.coloc_envoye = 'Remboursement coloc (envoyé)';
 const CAT_GRP = Object.fromEntries(RULES.map(r => [r.cat, r.grp])); CAT_GRP.provisions = 'contrainte'; CAT_GRP.interne = 'interne'; CAT_GRP.abo_autre = 'abonnement'; CAT_GRP.contrainte_autre = 'contrainte';
 const GENERIC_KW = new Set(['ASSURANCE', 'ASSURANCES', 'LOYER', 'TAXE', 'IMPOT', 'IMPOTS', 'MUTUELLE', 'LIVRET', 'EPARGNE', 'RETRAIT', 'DAB', 'STATION', 'RESTAURANT', 'BRASSERIE', 'BOULANGERIE', 'CABINET', 'DR', 'MEDECIN', 'PHARMACIE', 'PARKING', 'EAU DE', 'TRAITEMENT', 'PAIE', 'SALAIRE']);
 
 const has = (n, kw) => n.includes(' ' + kw + ' ');
-const NOISE = /\b(PRLV|PRELEVEMENT|SEPA|EUROPEEN|PAIEMENT|PAIEMT|PAR|CARTE|CB|FACT|FACTURE|VIR|VIREMENT|RECU|EMIS|DE|DU|LE|LA|LES|ET|SA|SAS|SARL|FRANCE|FR|REF|ECH|MOTIF|ICS|RUM|MANDAT|X\d+|\d+)\b/g;
+const NOISE = /\b(PRLV|PRELEVEMENT|SEPA|EUROPEEN|PAIEMENT|PAIEMT|PAR|CARTE|CB|FACT|FACTURE|VIR|VIRT|VIREMENT|VIREMENTS|INST|INSTANTANE|PERMANENT|RECU|RECUE|EMIS|EN|VOTRE|VOS|FAVEUR|VERS|POUR|A|AU|AUX|DE|DES|DU|D|L|LE|LA|LES|ET|SA|SAS|SARL|FRANCE|FR|REF|ECH|MOTIF|ICS|RUM|MANDAT|X\d+|\d+)\b/g;
 function cleanLabel(label) { return normText(label).replace(NOISE, ' ').replace(/\s+/g, ' ').trim(); }
 
 // ctx.colocAliases : mots-clés (ex. TRICOUNT, prénom d'un coloc) qui signalent un remboursement entre colocataires
@@ -232,9 +232,42 @@ const OVR = {
   abonnement: { cat: 'abo_autre', grp: 'abonnement' }, epargne: { cat: 'epargne', grp: 'epargne' }, interne: { cat: 'interne', grp: 'interne' },
   courant: { cat: 'autre', grp: 'courant' }, revenu: { cat: 'autre_credit', grp: 'revenu' }, salaire: { cat: 'salaire', grp: 'revenu' }
 };
+// Codes que l'IA peut attribuer à une opération (décrits à l'IA tels quels)
+const AI_CODES = {
+  salaire: 'Salaire, traitement, paie', revenu: 'Autre revenu régulier (indemnités, vacations, aides CAF, pension, loyer perçu)', remboursement: 'Remboursement reçu (santé, achat, avoir)',
+  interne: 'Virement entre deux comptes de la même personne (vers ou depuis un livret, un PEA, une autre banque)', epargne: 'Versement vers une épargne ou un placement (livret, PEA, assurance-vie)',
+  coloc: 'Remboursement entre colocataires ou amis (Tricount, Lydia, Wero…)', logement: 'Loyer, charges de copropriété', credit: 'Mensualité de crédit (immobilier, auto, LOA, consommation)',
+  energie: 'Électricité, gaz, eau', telecom: 'Box internet, forfait mobile', assurance: 'Assurance (habitation, auto, emprunteur, autre)', sante: 'Mutuelle santé', impots: 'Impôts et taxes',
+  transport_abo: 'Abonnement de transport en commun', garde: 'Garde d\'enfant, cantine, scolarité', streaming: 'Abonnement vidéo, musique, livres audio', cloud: 'Abonnement logiciel, cloud, application',
+  sport: 'Abonnement salle de sport ou club', presse: 'Abonnement presse', abo_autre: 'Autre abonnement', alimentation: 'Courses alimentaires', restauration: 'Restaurant, livraison, café, boulangerie',
+  transport: 'Carburant, péage, parking, train, VTC', achats: 'Achats divers (vêtements, high-tech, maison)', sante_courant: 'Soins (pharmacie, médecin, opticien)', loisirs: 'Loisirs, sorties, voyages',
+  dons: 'Dons, cadeaux, cagnottes', retrait: 'Retrait d\'espèces', frais_evitable: 'Frais bancaires évitables (commission d\'intervention, agios, rejet)', frais_optimisable: 'Cotisation carte, tenue de compte',
+  carte_total: 'Total mensuel prélevé pour une carte à débit différé', autre: 'Autre dépense', inconnu: 'Impossible à déterminer (virement à une personne sans indication…)'
+};
+function aiMap(code, amount) {
+  if (code === 'salaire') return amount > 0 ? { cat: 'salaire', grp: 'revenu' } : null;
+  if (code === 'revenu') return amount > 0 ? { cat: 'indemnites', grp: 'revenu' } : null;
+  if (code === 'remboursement') return { cat: 'remboursement', grp: 'interne' };
+  if (code === 'interne') return { cat: 'interne', grp: 'interne' };
+  if (code === 'epargne') return amount < 0 ? { cat: 'epargne', grp: 'epargne' } : { cat: 'interne', grp: 'interne' };
+  if (code === 'coloc') return { cat: amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage' };
+  if (code === 'carte_total') return { cat: 'carte_total', grp: 'interne' };
+  if (code === 'loisirs' || code === 'dons') return { cat: code, grp: 'courant' };
+  if (amount > 0) return null; // une dépense attribuée à un crédit : on ne la change pas
+  if (CAT_GRP[code]) return { cat: code, grp: CAT_GRP[code] };
+  return code === 'autre' ? { cat: 'autre', grp: 'courant' } : null;
+}
 function categorize(tx, ctx = {}) {
+  const b = categorizeBase(tx, ctx);
+  if (b.manuel || b.cat === 'carte_total' || !ctx.aiCats) return b;
+  const code = ctx.aiCats[opKey(tx.label) + (tx.amount > 0 ? '|+' : '|-')];
+  if (!code || code === 'inconnu') return b;
+  if (code === 'coloc' && b.grp !== 'partage' && !ctx.aiColocOk) return b; // la colocation doit être confirmée par l'utilisateur
+  const m = aiMap(code, tx.amount); return m ? { ...b, ...m, ai: true } : b;
+}
+function categorizeBase(tx, ctx = {}) {
   const n = normText(tx.label), key = opKey(tx.label), o = ctx.overrides && ctx.overrides[key];
-  if (o === 'coloc') return { ...tx, cat: tx.amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage', merchant: key };
+  if (o === 'coloc') return { ...tx, cat: tx.amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage', merchant: key, manuel: true };
   if (o && OVR[o]) return { ...tx, ...OVR[o], merchant: key, manuel: true };
   for (const a of ctx.colocAliases || []) if (a && has(n, a))
     return { ...tx, cat: tx.amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage', merchant: a };
@@ -1010,7 +1043,7 @@ function investPlan(d, p, inv) {
     finals: { pessimiste: scen('pessimiste').at(-1), median: med.at(-1), optimiste: scen('optimiste').at(-1), verses: verses.at(-1), fraisChers: fraisChers.at(-1) } };
 }
 
-global.Engine = { parseBrokerCSV, brokerKind, toIdentify, opKey, months, CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
+global.Engine = { AI_CODES, aiMap, parseBrokerCSV, brokerKind, toIdentify, opKey, months, CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="ui">
@@ -1039,7 +1072,7 @@ const fresh = () => ({
   screen: 'accueil', device: detectDevice(), banques: [], tutoBank: null,
   profile: { profilType: 'jeune_actif', adultes: 1, enfantsMoins14: 0, enfantsPlus14: 0, logement: 'locataire', statut: '', horizon: '', tolerance: '', projets: [],
     colocNb: 2, colocPart: '', colocAliases: 'TRICOUNT', externes: [] },
-  docs: [], raw: [], flags: {}, shared: {}, overrides: {}, placements: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
+  docs: [], raw: [], flags: {}, shared: {}, overrides: {}, placements: {}, aiOn: null, aiCats: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
   inv: { initial: 0, mensuel: null, horizon: null, fraisEtf: 0.2, fraisFonds: 1.8 }
 });
 let S = fresh();
@@ -1047,7 +1080,7 @@ let S = fresh();
 /* ---------- Pipeline d'analyse ---------- */
 const isColoc = () => S.profile.profilType === 'colocation';
 const colocPart = () => { const p = S.profile; const v = +p.colocPart; return v > 0 && v <= 100 ? v / 100 : 1 / ((+p.colocNb || 1) + 1); };
-const catCtx = () => ({ overrides: S.overrides, cardDetail: S.raw.some(t => t.encours) });
+const catCtx = () => ({ overrides: S.overrides, cardDetail: S.raw.some(t => t.encours), aiCats: S.aiOn ? S.aiCats : null, aiColocOk: isColoc() });
 const catAll = () => S.raw.map(t => E.categorize(t, catCtx()));
 const normAlias = a => a.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 function compute() {
@@ -1225,6 +1258,7 @@ function docItem(d, i) {
   const txt = DOC_TEXT.get(d.uid);
   return `<li class="card !p-3 text-sm ${d.kind === 'inconnu' ? '!border-amber-300' : ''}"><div class="flex items-start gap-3"><span class="text-lg">${ico}</span><span class="flex-1 min-w-0"><span class="block font-medium truncate">${esc(d.name)}</span><span class="block text-xs ${tone}">${d.detail}</span>${(d.warnings || []).map(w => `<span class="block text-xs text-amber-700">⚠ ${esc(w)}</span>`).join('')}</span><button type="button" data-deldoc="${i}" class="text-slate-400 hover:text-red-600 px-1">✕</button></div>
     ${txt && (d.kind === 'inconnu' || !d.ok || d.choisi) ? `<div class="mt-2 flex items-center gap-2"><span class="text-xs text-slate-500 whitespace-nowrap">${d.kind === 'inconnu' ? 'C\'est :' : 'Mal reconnu ? C\'est :'}</span><select data-reclass="${i}" class="inp-sm flex-1 min-w-0">${RECLASS.map(([v, l]) => `<option value="${v}" ${d.choix === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}
+    ${d.resume ? `<p class="text-xs text-slate-600 mt-1">💬 ${esc(d.resume)}</p>` : ''}
     ${d.kind === 'paie' && !d.net ? `<div class="mt-2 flex items-center gap-2"><span class="text-xs text-slate-500">Net payé lu sur la fiche :</span><input type="number" inputmode="decimal" data-docnet="${i}" placeholder="€" class="inp-sm w-28"><span class="text-[11px] text-slate-400">(facultatif)</span></div>` : ''}
     ${firstOfAccount ? `<div class="mt-2 flex items-center gap-2"><span class="text-xs text-slate-500 whitespace-nowrap">Le compte ${esc(d.compte)} est :</span><select data-pltype="${esc(d.compte)}" class="inp-sm flex-1 min-w-0"><option value="">— choisir —</option>${PLACEMENT_TYPES.map(([v, l]) => `<option value="${v}" ${pl.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>${!pl.type ? '<p class="text-[11px] text-amber-700 mt-1">Indiquez le type de ce compte pour que sa valeur et vos versements soient pris en compte.</p>' : ''}` : ''}
     ${txt ? `<details class="mt-2"><summary class="text-[11px] text-slate-400">Voir le texte lu</summary><pre class="mt-1 p-2 bg-slate-900 text-slate-100 rounded-lg max-h-48 overflow-auto whitespace-pre-wrap text-[10px]">${esc(txt.lines.join('\n').slice(0, 4000))}</pre></details>` : ''}</li>`;
@@ -1244,6 +1278,7 @@ function renderDocuments() {
       <div class="text-3xl">📥</div><div class="font-semibold text-blue-900 mt-2">Ajouter mes documents</div>
       <div class="text-xs text-slate-500 mt-1">PDF, CSV, OFX ou photo · plusieurs à la fois · lus sur cet appareil uniquement</div></label>
     <div id="docMsg" class="text-sm mt-3"></div>
+    ${aiAvailable() ? `<label class="flex items-center gap-3 card !p-3 mt-3 text-sm cursor-pointer"><input type="checkbox" id="aiToggle" ${S.aiOn ? 'checked' : ''} class="w-5 h-5"><span><b>🤖 Analyse intelligente (IA)</b><span class="block text-xs text-slate-500">${S.aiOn ? 'Activée : documents et opérations compris par l\'IA, après anonymisation.' : S.aiOn === false ? 'Désactivée : lecture simple uniquement.' : 'Recommandée : l\'IA comprend vos documents et opérations (après anonymisation).'}</span></span></label>` : ''}
     <div class="space-y-3 mt-5">
       ${item('releve', '1', 'Relevés du compte courant', covTxt, st.releve, 'Obligatoire')}
       ${item('epargne', '2', 'Livrets, PEA, assurance-vie', st.epargne ? 'Soldes lus ✓' : 'Ou saisie rapide plus loin', st.epargne, 'Facultatif')}
@@ -1388,12 +1423,20 @@ function bindWizard() {
   const ca = $('#crAdd'); if (ca) ca.onclick = () => { S.credits.push({ type: 'conso', organisme: '', mensualite: '', crd: '', taux: '', fin: '', assurance: '', source: 'manuel', surReleves: false }); renderWizard(); };
   const ea = $('#extAdd'); if (ea) ea.onclick = () => { S.profile.externes.push({ label: '', cat: 'energie', montant: 0 }); renderWizard(); };
   const cb = $('#cbColoc'); if (cb) cb.onchange = () => { S.profile.profilType = cb.checked ? 'colocation' : 'jeune_actif'; S.profile.adultes = 1; };
+  const at = $('#aiToggle'); if (at) at.onchange = async () => { if (at.checked) { S.aiOn = null; if (!(await ensureAiConsent())) at.checked = false; } else S.aiOn = false; renderWizard(); };
   const fi = $('#fileInput'); if (fi) fi.onchange = () => { handleFiles([...fi.files]); fi.value = ''; };
   const dz = $('#dropZone');
   if (dz) { dz.ondragover = e => { e.preventDefault(); dz.classList.add('drop-hover'); }; dz.ondragleave = () => dz.classList.remove('drop-hover'); dz.ondrop = e => { e.preventDefault(); dz.classList.remove('drop-hover'); handleFiles([...e.dataTransfer.files]); }; }
   if (docMsgLater) { docMsg(docMsgLater, 'emerald'); docMsgLater = ''; }
   const pr = $('#wPrev'); if (pr) pr.onclick = () => go(-1);
-  const nx = $('#wNext'); if (nx) nx.onclick = () => go(1);
+  const nx = $('#wNext'); if (nx) nx.onclick = async () => {
+    if (S.screen === 'documents' && S.raw.length && await ensureAiConsent()) {
+      progressModal('🤖 Analyse de vos opérations…');
+      try { const n = await aiClassifyOps(); closeModal(); if (n) toast(`🤖 ${n} types d'opérations analysés par l'IA.`); S.applied = false; }
+      catch (e) { closeModal(); toast('IA indisponible (' + esc(e.message) + ') : analyse simple utilisée.', 'amber'); }
+    }
+    go(1);
+  };
   const st = $('#btnStart'); if (st) st.onclick = () => { if (S.raw.length) { S = fresh(); } S.screen = 'banque'; render(); };
   const dm = $('#btnDemo'); if (dm) dm.onclick = loadDemo;
   v.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openAudit(b.dataset.open));
@@ -1550,6 +1593,7 @@ function applyPlacements() {
   for (const [t, a] of Object.entries(acc)) { if (a.v != null) S.profile[F[t][0]] = Math.round(a.v); if (a.ve != null) S.profile[F[t][1]] = Math.round(a.ve); }
 }
 async function handleFiles(files) {
+  if (aiAvailable() && S.aiOn == null) await ensureAiConsent();
   for (const f of files) {
     docMsg(`⏳ Lecture de ${esc(f.name)}…`, 'blue');
     const doc = { name: f.name, ok: true, warnings: [], uid: ++docSeq };
@@ -1560,7 +1604,7 @@ async function handleFiles(files) {
         const lines = await ocrImages([f], f.name), rows = lines.map(text => ({ text, items: [] }));
         if (lines.join('').replace(/\s/g, '').length < 30) throw new Error('le texte de cette photo n\'a pas pu être déchiffré (photo floue ou de travers ?)');
         DOC_TEXT.set(doc.uid, { rows, lines }); doc.texte = true;
-        applyPdf(doc, E.classifyPdf(lines), rows, lines); doc.warnings.push('Lu par reconnaissance d\'image : vérifiez les montants.');
+        await readDocSmart(doc, rows, lines); doc.warnings.push('Lu par reconnaissance d\'image : vérifiez les montants.');
         S.docs.push(doc); S.applied = false; continue;
       }
       if (/\.(ofx|qfx)$/i.test(f.name)) {
@@ -1570,7 +1614,7 @@ async function handleFiles(files) {
       } else if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
         const rows = await pdfToRows(f), lines = rows.map(r => r.text);
         DOC_TEXT.set(doc.uid, { rows, lines }); doc.texte = true;
-        applyPdf(doc, E.classifyPdf(lines), rows, lines); if (rows.ocr) doc.warnings.push('Document scanné, lu par reconnaissance d\'image : vérifiez les montants.');
+        await readDocSmart(doc, rows, lines); if (rows.ocr) doc.warnings.push('Document scanné, lu par reconnaissance d\'image : vérifiez les montants.');
       } else {
         const text = await readText(f), br = E.parseBrokerCSV(text, f.name);
         if (br) {
@@ -1608,6 +1652,137 @@ function reclassify(i, val) {
 function removeDoc(i) {
   const d = S.docs[i]; S.raw = S.raw.filter(t => d.uid ? t.docUid !== d.uid : t.docId !== i); DOC_TEXT.delete(d.uid);
   S.docs.splice(i, 1); S.applied = false; renderWizard();
+}
+
+/* ---------- Analyse intelligente (IA via le relais Cloudflare) ---------- */
+const AI_URL = '__AI_URL__';
+const aiAvailable = () => /^https:\/\//.test(AI_URL) && (/github\.io$/.test(location.hostname) || /^localhost$|^127\./.test(location.hostname));
+// Retire ce qui identifie directement une personne ou un compte avant tout envoi
+function anonymize(t) {
+  return String(t)
+    .replace(/\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,3})?\b/g, '[IBAN]')
+    .replace(/\b[A-Z]{4}FR[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b/g, '[BIC]')
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[e-mail]')
+    .replace(/(?:\+33\s?|\b0)[1-9](?:[\s.-]?\d{2}){4}\b/g, '[tél]')
+    .replace(/\b[12][ ]?\d{2}[ ]?\d{2}[ ]?\d{2}[ ]?\d{3}[ ]?\d{3}(?:[ ]?\d{2})?\b/g, '[n° sécu]')
+    .replace(/\b\d{6,}\b/g, '[n°]')
+    .replace(/\b(M|MR|MME|MLLE|MONSIEUR|MADAME|Monsieur|Madame)\.?\s+[A-ZÀ-Ü][A-Za-zÀ-ÿ'-]+(?:\s+[A-ZÀ-Ü][A-Za-zÀ-ÿ'-]+)?/g, '$1 [nom]');
+}
+async function aiCall(system, user, maxTokens = 2048) {
+  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 90000);
+  try {
+    const r = await fetch(AI_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system, user, max_tokens: maxTokens }), signal: ctl.signal });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.error) throw new Error(j.error || ('erreur ' + r.status));
+    return j.text;
+  } finally { clearTimeout(to); }
+}
+function parseJsonLoose(t) {
+  const s = String(t || '').replace(/```(?:json)?/gi, '');
+  const a = s.search(/[{\[]/); if (a < 0) throw new Error('réponse IA illisible');
+  const close = s[a] === '{' ? '}' : ']', b = s.lastIndexOf(close);
+  return JSON.parse(s.slice(a, b + 1));
+}
+async function ensureAiConsent() {
+  if (!aiAvailable()) return false;
+  if (S.aiOn != null) return S.aiOn;
+  S.aiOn = !!(await modal({ title: '🤖 Analyse intelligente', body: `Pour comprendre vos opérations et vos documents comme le ferait un conseiller, l'app peut faire appel à une IA.<ul class="list-disc pl-5 mt-2 space-y-1"><li>Avant tout envoi, l'app <b>retire</b> les numéros de compte, IBAN, n° de sécurité sociale, n° fiscaux, e-mails, téléphones et noms précédés de « M. / Mme ».</li><li>Le reste (libellés, montants, dates) est analysé par le service IA de <b>Cloudflare</b>, qui ne l'utilise pas pour entraîner ses modèles. Rien n'est enregistré par l'app sur un serveur.</li><li>Sans IA, l'analyse reste possible mais comprend moins de choses.</li></ul>`, ok: 'Activer l\'analyse IA', cancel: 'Non, analyse simple' }));
+  return S.aiOn;
+}
+function progressModal(text) {
+  $('#modal-root').innerHTML = `<div class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-center p-4 fade"><div class="card w-full max-w-sm text-center"><div class="text-3xl animate-pulse">🤖</div><div id="progText" class="font-semibold text-slate-900 mt-3">${text}</div><p class="text-xs text-slate-500 mt-2">Cela peut prendre jusqu'à une minute.</p></div></div>`;
+}
+const progress = t => { const e = $('#progText'); if (e) e.innerHTML = t; };
+const closeModal = () => { $('#modal-root').innerHTML = ''; };
+
+// 1) Classement de toutes les opérations (libellés uniques) par l'IA
+async function aiClassifyOps() {
+  const txs = S.raw.map(t => E.categorize(t, { overrides: S.overrides, cardDetail: S.raw.some(x => x.encours) }));
+  const g = {};
+  for (const t of txs) {
+    if (t.manuel || t.encours && t.cat !== 'autre') continue;
+    const k = E.opKey(t.label) + (t.amount > 0 ? '|+' : '|-');
+    if (S.aiCats && S.aiCats[k]) continue;
+    (g[k] = g[k] || { k, lab: t.label, sens: t.amount > 0 ? 'crédit' : 'débit', l: [], cat: t.cat }).l.push(Math.abs(t.amount));
+  }
+  const items = Object.values(g); if (!items.length) return 0;
+  S.aiCats = S.aiCats || {};
+  const codes = Object.entries(E.AI_CODES).map(([c, d]) => `${c} : ${d}`).join('\n');
+  const sys = 'Tu es un assistant comptable français. Tu classes les opérations bancaires d\'un particulier. Réponds UNIQUEMENT avec un objet JSON de la forme {"r":[[numéro,"code"],...]}, avec exactement un élément par opération, et un code pris dans la liste fournie. N\'invente rien : si une opération est un simple virement à une personne sans indication, utilise "inconnu".';
+  let done = 0;
+  for (let i = 0; i < items.length; i += 100) {
+    const batch = items.slice(i, i + 100);
+    progress(`🤖 Analyse de vos opérations… (${Math.min(i + 100, items.length)}/${items.length})`);
+    const lines = batch.map((x, j) => `${j + 1} | ${x.sens} | ${anonymize(x.lab).slice(0, 90)} | ${Math.round(x.l.reduce((a, b) => a + b, 0) / x.l.length)} € | ${x.l.length} fois`).join('\n');
+    const out = parseJsonLoose(await aiCall(sys, `Codes possibles :\n${codes}\n\nOpérations (numéro | sens | libellé | montant moyen | fréquence sur la période) :\n${lines}`, 3000));
+    for (const [n, c] of (out.r || out.resultats || [])) { const x = batch[+n - 1]; if (x && E.AI_CODES[c]) { S.aiCats[x.k] = c; done++; } }
+  }
+  return done;
+}
+
+// 2) Lecture d'un document (fiche de paie, avis, crédit, épargne…) par l'IA
+function selectForAi(lines) {
+  const t = lines.join('\n'); if (t.length <= 14000) return t;
+  const now = new Date(), mm = String(now.getMonth() + 1).padStart(2, '0'), yy = String(now.getFullYear());
+  const near = lines.filter(l => l.includes(`/${mm}/${yy}`) || l.includes(`/${String(now.getMonth()).padStart(2, '0')}/${yy}`) || l.includes(`${yy}-${mm}`)).slice(0, 30);
+  return lines.join('\n').slice(0, 9000) + '\n[…]\n' + near.join('\n') + '\n[…]\n' + lines.slice(-25).join('\n');
+}
+async function aiReadDoc(name, lines) {
+  const today = new Date().toLocaleDateString('fr-FR');
+  const sys = 'Tu lis des documents financiers français dont le texte a été extrait automatiquement (il peut contenir des erreurs de lecture). Réponds UNIQUEMENT avec un objet JSON valide.';
+  const user = `Nous sommes le ${today}. Identifie le type du document parmi : paie, avis_impot, credit, epargne, releve_compte, encours_carte, autre.
+Puis extrais les champs (nombres au format 1234.56, sans symbole ; null si absent) :
+- paie : net_paye (net versé après impôt), net_avant_impot, employeur
+- avis_impot : revenu_fiscal_reference, nombre_parts, impot_net
+- credit (offre de prêt, tableau d'amortissement, échéancier, relevé ou courrier d'un crédit) : organisme, type_credit (immo|auto|conso|renouvelable|etudiant|autre), mensualite (échéance actuelle), capital_restant_du (à la date d'aujourd'hui), taux (taux débiteur ou nominal en %), taeg, date_fin (AAAA-MM), assurance_mensuelle, assurance_resiliee (true/false), montant_initial
+- epargne (livret, PEA, compte-titres, assurance-vie, PER) : enveloppe (livretA|ldds|lep|pea|av|per|cto|autre_livret), solde (valeur actuelle), total_verse, annee_ouverture
+- releve_compte, encours_carte, autre : aucun champ
+Format : {"type":"…","champs":{…},"resume":"une phrase simple pour l'utilisateur"}
+
+Document « ${anonymize(name)} » :
+${anonymize(selectForAi(lines))}`;
+  return parseJsonLoose(await aiCall(sys, user, 1200));
+}
+const numOr = v => v == null || v === '' || isNaN(+v) ? null : +v;
+function applyAiDoc(doc, res, rows, lines) {
+  const c = res.champs || {}, t = res.type;
+  doc.ai = true; doc.ok = true; doc.warnings = [];
+  if (t === 'paie') { doc.kind = 'paie'; doc.net = numOr(c.net_paye) || numOr(c.net_avant_impot); doc.ok = !!doc.net; doc.detail = doc.net ? `Fiche de paie : net versé ${eur(doc.net, 2)}` : 'Fiche de paie : net introuvable'; S.applied = false; }
+  else if (t === 'avis_impot') { doc.kind = 'avis'; const r = numOr(c.revenu_fiscal_reference), pa = numOr(c.nombre_parts); if (r) S.profile.rfr = r; if (pa) S.profile.parts = pa; doc.ok = !!r; doc.detail = r ? `Avis d'impôt : RFR ${r.toLocaleString('fr-FR')} €, ${pa ?? '?'} part(s)` : 'Avis d\'impôt : RFR introuvable'; }
+  else if (t === 'credit') {
+    doc.kind = 'credit';
+    const org = c.organisme ? String(c.organisme).slice(0, 40) : '', type = E.CREDIT_TYPES[c.type_credit] ? c.type_credit : E.creditType(org + ' ' + lines.slice(0, 30).join(' '));
+    const item = { type, organisme: org, organismeCompact: org ? org.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '') : null, mensualite: numOr(c.mensualite) ?? '', crd: numOr(c.capital_restant_du) ?? '', taux: numOr(c.taux) ?? numOr(c.taeg) ?? '', fin: /^\d{4}-\d{2}/.test(c.date_fin || '') ? c.date_fin.slice(0, 7) : '', assurance: c.assurance_resiliee ? 0 : (numOr(c.assurance_mensuelle) ?? ''), assuranceResiliee: !!c.assurance_resiliee, source: 'document', surReleves: false, docName: doc.name, docUid: doc.uid };
+    S.docCredits = S.docCredits.filter(x => x.docUid !== doc.uid); S.credits = S.credits.filter(x => !(x.source === 'document' && x.docUid === doc.uid));
+    S.docCredits.push(item); if (S.creditsInit) mergeCredit(S.credits, item);
+    const bits = [item.mensualite !== '' && `${eur(+item.mensualite, 0)}/mois`, item.crd !== '' && `reste ${eur(+item.crd, 0)}`, item.taux !== '' && `${item.taux} %`, item.fin && `fin ${item.fin.split('-').reverse().join('/')}`, item.assuranceResiliee && 'assurance résiliée'].filter(Boolean);
+    doc.detail = `${E.CREDIT_TYPES[type]}${org ? ' (' + esc(org) + ')' : ''}${bits.length ? ' : ' + bits.join(' · ') : ''}`;
+  }
+  else if (t === 'epargne') {
+    doc.kind = 'epargne';
+    const env = { livretA: 'livretA', ldds: 'ldds', lep: 'lep', pea: 'pea', av: 'av', per: 'per', cto: 'cto', autre_livret: 'livretsAutres' }[c.enveloppe] || 'livretsAutres';
+    const solde = numOr(c.solde), verse = numOr(c.total_verse), an = numOr(c.annee_ouverture);
+    if (solde != null) S.profile[SAV_FIELD[env]] = solde;
+    const VF = { pea: 'peaVersements', av: 'avVersements', cto: 'ctoVersements', per: 'perVersements' }, AF = { pea: 'peaAnnee', av: 'avAnnee' };
+    if (verse != null && VF[env]) S.profile[VF[env]] = verse; if (an && AF[env]) S.profile[AF[env]] = an;
+    doc.ok = solde != null; doc.detail = `${SAV_LABEL[env]}${solde != null ? ' : ' + eur(solde, 0) : ' : solde introuvable'}${verse != null ? ` · ${eur(verse, 0)} versés` : ''}`;
+  }
+  else if (t === 'releve_compte' || t === 'encours_carte') { applyPdf(doc, t === 'encours_carte' ? 'encours' : 'releve', rows, lines, 'choisi'); doc.ai = false; return; }
+  else { doc.kind = 'inconnu'; doc.ok = false; doc.detail = 'Document non reconnu : dites-nous ce que c\'est'; doc.ai = false; return; }
+  if (res.resume) doc.resume = String(res.resume).slice(0, 200);
+  doc.detail += ' · <span class="text-blue-700">lu par l\'IA</span>';
+}
+// Lecture d'un document : IA si activée (repli sur la lecture simple en cas d'échec)
+async function readDocSmart(doc, rows, lines) {
+  const kind = E.classifyPdf(lines);
+  if (kind !== 'releve' && kind !== 'encours' || !lines.some(l => /\d{1,2}[\/.]\d{1,2}.*\d,\d{2}/.test(l))) {
+    if (await ensureAiConsent()) {
+      try { docMsg(`🤖 L'IA lit « ${esc(doc.name)} »…`, 'blue'); applyAiDoc(doc, await aiReadDoc(doc.name, lines), rows, lines); return; }
+      catch (e) { doc.aiErr = e.message; }
+    }
+  }
+  applyPdf(doc, kind, rows, lines);
+  if (doc.aiErr) doc.warnings.push('IA indisponible (' + doc.aiErr + ') : lecture simple utilisée.');
 }
 
 /* ---------- Plusieurs audits enregistrés, chacun chiffré (AES-GCM, clé dérivée de son code) ---------- */
