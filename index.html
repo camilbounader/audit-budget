@@ -201,11 +201,12 @@ const RULES = [
   { cat: 'restauration', label: 'Restauration & livraison', grp: 'courant', kw: ['UBER EATS', 'DELIVEROO', 'JUST EAT', 'MCDONALD', 'MCDONALDS', 'BURGER KING', 'KFC', 'RESTAURANT', 'BRASSERIE', 'BOULANGERIE', 'STARBUCKS', 'SUSHI', 'PIZZA'] },
   { cat: 'transport', label: 'Transport & carburant', grp: 'courant', kw: ['TOTAL', 'TOTALENERGIES', 'ESSO', 'BP', 'SHELL', 'AVIA', 'STATION', 'UBER', 'BOLT', 'BLABLACAR', 'SNCF', 'OUIGO', 'PEAGE', 'AUTOROUTE', 'AUTOROUTES', 'VINCI AUTOROUTES', 'APRR', 'SANEF', 'ASF', 'COFIROUTE', 'ESCOTA', 'SAPN', 'ALIENOR', 'ATMB', 'PARKING', 'INDIGO'] },
   { cat: 'achats', label: 'Achats divers', grp: 'courant', kw: ['AMAZON', 'AMZN', 'FNAC', 'DARTY', 'CDISCOUNT', 'ZALANDO', 'VINTED', 'IKEA', 'LEROY MERLIN', 'CASTORAMA', 'ACTION', 'PAYPAL', 'DECATHLON', 'APPLE COM'] },
-  { cat: 'sante_courant', label: 'Santé (soins)', grp: 'courant', kw: ['PHARMACIE', 'DOCTOLIB', 'MEDECIN', 'DR', 'CABINET', 'LABORATOIRE', 'OPTICIEN'] },
+  { cat: 'sante_courant', label: 'Santé (soins)', grp: 'courant', kw: ['PHARMACIE', 'DOCTOLIB', 'MEDECIN', 'CABINET MEDICAL', 'CABINET DENTAIRE', 'DENTISTE', 'KINE', 'OSTEOPATHE', 'RADIOLOGIE', 'LABORATOIRE', 'OPTICIEN'] },
   { cat: 'retrait', label: "Retraits d'espèces", grp: 'courant', kw: ['RETRAIT DAB', 'RETRAIT', 'DAB'] }
 ];
 const CREDIT_RULES = [
-  { cat: 'salaire', label: 'Salaires & traitements', kw: ['SALAIRE', 'PAIE', 'REMUNERATION', 'TRAITEMENT', 'ACOMPTE SALAIRE'] },
+  { cat: 'indemnites', label: 'Indemnités & activités annexes', kw: ['POMPIERS', 'POMPIER', 'SDIS', 'SPV', 'VACATIONS'] },
+  { cat: 'salaire', label: 'Salaires & traitements', kw: ['SALAIRE', 'SALAIRES', 'PAIE', 'PAYE', 'PAYE DU MOIS', 'REMUNERATION', 'TRAITEMENT', 'ACOMPTE SALAIRE'] },
   { cat: 'pension', label: 'Pensions & retraites', kw: ['PENSION', 'RETRAITE', 'CNAV', 'CARSAT', 'AGIRC', 'ARRCO', 'IRCANTEC', 'CNRACL'] },
   { cat: 'indemnites', label: 'Indemnités & activités annexes', kw: ['SDIS', 'SAPEURS POMPIERS', 'SAPEUR POMPIER', 'POMPIERS', 'SPV', 'VACATION', 'VACATIONS', 'INDEMNITE', 'INDEMNITES', 'IND SPV', 'GARDES'] },
   { cat: 'prestations', label: 'Prestations sociales', kw: ['CAF', 'ALLOCATION', 'PRIME ACTIVITE', 'FRANCE TRAVAIL', 'POLE EMPLOI', 'CPAM', 'AMELI'] },
@@ -360,7 +361,7 @@ function parseCSV(text, source = 'csv') {
   const head = compactUp(pre + ' ' + source);
   const hw = normText(pre + ' ' + source).replace(/ CAISSE D ?EPARGNE /g, ' ');
   const epargne = / (LIVRET|LIVRETS|LDDS|LDD|LEP|CSL|PEL|CEL) | COMPTE SUR LIVRET | PLAN D ?EPARGNE | EPARGNE POPULAIRE | COMPTE EPARGNE /.test(hw) && !/ COMPTE (DE DEPOT|COURANT|CHEQUES?) /.test(hw);
-  const encours = / (ENCOURS|EN COURS|DEBIT DIFFERE|CARTE DIFFEREE?|OPERATIONS CARTE|RELEVE CARTE) /.test(hw) && !epargne;
+  const encours = / (ENCOURS CARTE|ENCOURS DE CARTE|ENCOURS|DEBIT DIFFERE|CARTE A DEBIT DIFFERE|CARTE DIFFEREE?|RELEVE DE CARTE|RELEVE CARTE) /.test(hw) && !epargne && !/ COMPTE (DE DEPOT|COURANT|CHEQUES?) | VIREMENT EN VOTRE FAVEUR /.test(hw);
   const sm = pre.match(/solde[^\n]*?(-?\d{1,3}(?:[ .\u00a0\u202f]\d{3})*,\d{2})/i);
   const solde = sm ? parseAmount(sm[1]) : null;
   const transactions = [];
@@ -377,8 +378,10 @@ function parseCSV(text, source = 'csv') {
     transactions.push({ date, label, amount: round2(amount), source });
   }
   if (!transactions.length && !epargne) warnings.push('Aucune opération lisible dans ce fichier.');
-  if (encours) transactions.forEach(t => { if (!/ (REMBOURSEMENT|AVOIR|REMISE|ANNULATION) /.test(normText(t.label))) t.amount = -Math.abs(t.amount); t.encours = true; });
-  return { transactions, warnings, epargne: epargne ? { type: savingsType(pre + ' ' + source) , solde } : null, solde, encours };
+  const toutPositif = transactions.length > 0 && transactions.every(t => t.amount > 0);
+  const vraiEncours = encours && !transactions.some(t => / (EN VOTRE FAVEUR|VIR(EMENT)? RECU|SALAIRE|PAYE) /.test(normText(t.label)));
+  if (vraiEncours) transactions.forEach(t => { if (toutPositif && !/ (REMBOURSEMENT|AVOIR|REMISE|ANNULATION) /.test(normText(t.label))) t.amount = -Math.abs(t.amount); t.encours = true; });
+  return { transactions, warnings, epargne: epargne ? { type: savingsType(pre + ' ' + source) , solde } : null, solde, encours: vraiEncours };
 }
 
 /* ---------- Exports de courtier (PEA / compte-titres) : POSITIONS, HISTORY, ORDERS… ---------- */
