@@ -1,6 +1,6 @@
 // Service worker : usage hors connexion. Il ne voit jamais vos documents (lus en mémoire par la page).
 // La page (index.html) est toujours prise en ligne d'abord : chaque mise à jour publiée arrive tout de suite.
-const CACHE = 'audit-budget-v6';
+const CACHE = 'audit-budget-v7';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));

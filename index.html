@@ -332,6 +332,13 @@ function parseCSV(text, source = 'csv') {
   if (!lines.length) return { transactions: [], warnings: ['Fichier vide'] };
   const d = detectDelimiter(lines);
   const rows = csvRows(clean, d);
+  if (!rows.some(r => r.some(c => parseDate(c)))) { // aucun mouvement : peut-être un livret sans opération sur la période
+    const all = lines.join(' \n '), hw0 = normText(all + ' ' + source).replace(/ CAISSE D ?EPARGNE /g, ' ');
+    if (/ (LIVRET|LIVRETS|LDDS|LDD|LEP|CSL|PEL|CEL) | COMPTE SUR LIVRET | PLAN D ?EPARGNE | EPARGNE POPULAIRE | COMPTE EPARGNE /.test(hw0)) {
+      const sm0 = all.match(/solde[^\n]*?(-?\d{1,3}(?:[ .\u00a0\u202f]\d{3})*,\d{2})/i);
+      return { transactions: [], warnings: [], epargne: { type: savingsType(all + ' ' + source), solde: sm0 ? parseAmount(sm0[1]) : null }, solde: null, encours: false };
+    }
+  }
   let map = null, start = 0;
   for (let i = 0; i < Math.min(rows.length, 30); i++) {
     const roles = {}; rows[i].forEach((c, j) => { const r = headerRole(c); if (r && roles[r] == null) roles[r] = j; });
@@ -387,7 +394,8 @@ function parseCSV(text, source = 'csv') {
 /* ---------- Exports de courtier (PEA / compte-titres) : POSITIONS, HISTORY, ORDERS… ---------- */
 function brokerKind(name, text) {
   const n = compactUp(name), h = compactUp(text.slice(0, 600));
-  if (/POSITION|PORTEFEUILLE|HOLDING|VALORISATION/.test(n)) return 'positions';
+  if (/POSITION|PORTEFEUILLE|HOLDING|VALORISATION/.test(n) || /VALORISATIONDETAILLEE|VALOTOTAL/.test(h)) return 'positions';
+  if (/HISTORIQUEDESOPERATIONS/.test(h) && /ISIN/.test(h)) return 'historique';
   if (/HISTORY|HISTORIQUE|MOUVEMENT|TRANSACTION|OPERATIONS/.test(n) && /ISIN|QUANTITE|QUANTITY|TITRE|INSTRUMENT|VERSEMENT|DEPOSIT/.test(h)) return 'historique';
   if (/ORDER|ORDRE/.test(n)) return 'ordres';
   if (/ISIN/.test(h) && /QUANTITE|QUANTITY|QTE/.test(h)) return /VALORISATION|VALEUR|MARKETVALUE|MONTANT/.test(h) ? 'positions' : 'ordres';
@@ -397,9 +405,14 @@ function parseBrokerCSV(text, name) {
   const kind = brokerKind(name, text); if (!kind) return null;
   const lines = text.replace(/^\ufeff/, '').split(/\r?\n/).filter(l => l.trim()), d = detectDelimiter(lines), rows = csvRows(text.replace(/^\ufeff/, ''), d);
   const compte = (name.match(/(\d{6,})/) || [])[1] || name;
-  const out = { kind, compte, valeur: null, versements: null, retraits: null, lignes: 0 };
-  // ligne d'en-tête = première ligne avec au moins 3 cellules non numériques
-  let hi = rows.findIndex(r => r.filter(c => c && isNaN(parseAmount(c))).length >= 3); if (hi < 0) return out;
+  const out = { kind, compte, valeur: null, versements: null, retraits: null, lignes: 0, typeCompte: null, plusValue: null };
+  const head = lines.slice(0, 8).join(' '), hn = normText(head);
+  out.typeCompte = / (COMPTE PEA|PEA PME|PEA|PLAN D EPARGNE EN ACTIONS) /.test(hn) ? 'pea' : / (COMPTE TITRES|CTO|COMPTE DE TITRES) /.test(hn) ? 'cto' : / (ASSURANCE VIE|CONTRAT VIE) /.test(hn) ? 'av' : / (PER|PERIN|EPARGNE RETRAITE) /.test(hn) ? 'per' : null;
+  const vt = head.match(/valo(?:risation)?\s*(?:totale?|globale)\s*[=:]\s*(-?[\d\s\u00a0\u202f.]+,\d{2})/i); if (vt) out.valeur = parseAmount(vt[1]);
+  const pv = head.match(/(?:\+\/-|plus.?ou.?moins)?\s*values?\s*latentes?\s*[=:]\s*(-?[\d\s\u00a0\u202f.]+,\d{2})/i); if (pv) out.plusValue = parseAmount(pv[1]);
+  // ligne d'en-tête = première ligne avec des intitulés de colonnes connus
+  let hi = rows.findIndex(r => r.filter(c => c && isNaN(parseAmount(c))).length >= 3 && /ISIN|NOM|LIBELLE|VALEUR|OPERATION|QUANTITE|QTE|INSTRUMENT|TITRE|DATE/.test(compactUp(r.join(' '))) && !/=/.test(r.join(' ')));
+  if (hi < 0) return out;
   const H = rows[hi].map(c => compactUp(c)), data = rows.slice(hi + 1).filter(r => r.length >= Math.min(3, H.length));
   const col = (inc, exc = []) => H.findIndex(h => inc.some(x => h.includes(x)) && !exc.some(x => h.includes(x)));
   const num = (r, j) => j < 0 ? NaN : parseAmount(r[j]);
@@ -411,7 +424,8 @@ function parseBrokerCSV(text, name) {
       const q = col(['QUANTITE', 'QUANTITY', 'QTE', 'NOMBRE', 'SHARES']), c = col(['COURS', 'DERNIER', 'LAST', 'PRICE', 'PRIX'], ['REVIENT', 'ACHAT', 'PRU', 'MOYEN']);
       data.forEach(r => { const a = num(r, q), b = num(r, c); if (!isNaN(a) && !isNaN(b)) { sum += a * b; n++; } });
     }
-    out.valeur = n ? round2(sum) : null; out.lignes = n;
+    if (out.valeur == null) out.valeur = n ? round2(sum) : null; out.lignes = n;
+    if (out.plusValue != null && out.valeur != null) out.prixRevient = round2(out.valeur - out.plusValue);
     const cash = col(['ESPECES', 'LIQUIDITE', 'CASH', 'SOLDE']); // parfois une ligne « espèces »
     return out;
   }
@@ -434,7 +448,7 @@ function parseBrokerCSV(text, name) {
 const CREDIT_HINT = /\b(VIR(EMENT)? (SEPA |INST )?RECU|VIREMENT DE|REMISE|AVOIR|REMBOURSEMENT|SALAIRE|PENSION|CAF|CPAM|PRIME)\b/;
 /* Lecture « par ligne » : on cherche le libellé (tolérant aux espaces entre lettres,
    accents, majuscules), puis le montant le plus à droite sur la ligne ou les 2 suivantes. */
-const AMT_RE = /\d{1,3}(?:[ .  ]\d{3})*[,.]\d{2}(?!\d)/g;
+const AMT_RE = /(?<![\d.,])(?:\d{1,3}(?:[ .\u00a0\u202f]\d{3})+|\d+)[,.]\d{2}(?!\d)/g;
 const INT_RE = /\d{1,3}(?:[ .  ]\d{3})+(?![\d,])|\d{3,}(?![\d,])/g;
 const compactUp = s => stripAccents(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
 function findLabeled(lines, specs, { min = 0, max = Infinity, ints = false } = {}) {
@@ -1451,7 +1465,7 @@ let pdfjsPromise = null;
 function loadPdfJs() {
   if (pdfjsPromise) return pdfjsPromise;
   const tryLoad = async () => {
-    try { const lib = await import('./vendor/pdf.min.mjs'); lib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', location.href).href; return lib; }
+    try { const lib = await import('./vendor/pdf.min.mjs'); lib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', location.href).href; lib.__wasmUrl = new URL('./vendor/wasm/', location.href).href; return lib; }
     catch (e) { const lib = await import(E.CONFIG.pdfjs.lib); lib.GlobalWorkerOptions.workerSrc = E.CONFIG.pdfjs.worker; return lib; }
   };
   return (pdfjsPromise = tryLoad().catch(e => { pdfjsPromise = null; throw new Error('le lecteur PDF n\'a pas pu se charger (connexion nécessaire la première fois)'); }));
@@ -1459,7 +1473,7 @@ function loadPdfJs() {
 async function openPdf(lib, bytes, name) {
   let password;
   for (let k = 0; k < 4; k++) {
-    try { return await lib.getDocument({ data: bytes.slice(), password, isEvalSupported: false, disableFontFace: true, verbosity: 0 }).promise; }
+    try { return await lib.getDocument({ data: bytes.slice(), password, isEvalSupported: false, disableFontFace: true, verbosity: 0, ...(lib.__wasmUrl ? { wasmUrl: lib.__wasmUrl } : {}) }).promise; }
     catch (e) {
       if (e && e.name === 'PasswordException') {
         password = await modal({ title: '🔐 Document protégé', body: `« ${esc(name)} » est protégé par un mot de passe${k ? ' <b class="text-red-600">(incorrect, réessayez)</b>' : ''}. Il reste sur cet appareil.`, input: 'password', ok: 'Ouvrir' });
@@ -1591,7 +1605,7 @@ function applyPlacements() {
   const F = { pea: ['peaValeur', 'peaVersements'], cto: ['ctoMontant', 'ctoVersements'], av: ['avMontant', 'avVersements'], per: ['perMontant', 'perVersements'] }, acc = {};
   for (const [, pl] of Object.entries(S.placements)) if (pl.type) {
     const a = acc[pl.type] = acc[pl.type] || { v: null, ve: null };
-    if (pl.valeur != null) a.v = (a.v || 0) + pl.valeur; if (pl.versements != null) a.ve = (a.ve || 0) + pl.versements - (pl.retraits || 0);
+    if (pl.valeur != null) a.v = (a.v || 0) + pl.valeur; if (pl.versements != null) a.ve = (a.ve || 0) + pl.versements - (pl.retraits || 0); else if (pl.prixRevient != null) a.ve = (a.ve || 0) + pl.prixRevient;
   }
   for (const [t, a] of Object.entries(acc)) { if (a.v != null) S.profile[F[t][0]] = Math.round(a.v); if (a.ve != null) S.profile[F[t][1]] = Math.round(a.ve); }
 }
@@ -1623,11 +1637,12 @@ async function handleFiles(files) {
         if (br) {
           const pl = S.placements[br.compte] = S.placements[br.compte] || { type: '', valeur: null, versements: null, retraits: null };
           if (br.valeur != null) pl.valeur = br.valeur; if (br.versements != null) { pl.versements = br.versements; pl.retraits = br.retraits; }
+          if (br.prixRevient != null) pl.prixRevient = br.prixRevient; if (br.typeCompte && !pl.type) { pl.type = br.typeCompte; pl.auto = true; }
           applyPlacements();
           Object.assign(doc, { kind: 'placement', compte: br.compte, ok: br.kind !== 'ordres' ? (br.valeur != null || br.versements != null) : true,
-            detail: br.kind === 'positions' ? (br.valeur != null ? `Positions du compte ${br.compte} : valeur ${eur(br.valeur, 0)}` : `Positions du compte ${br.compte} : valeur introuvable`)
-              : br.kind === 'historique' ? (br.versements != null ? `Historique du compte ${br.compte} : ${eur(br.versements, 0)} versés${br.retraits ? `, ${eur(br.retraits, 0)} retirés` : ''}` : `Historique du compte ${br.compte} : versements introuvables`)
-              : `Ordres du compte ${br.compte} : pas nécessaires pour l'audit (ignorés)` });
+            detail: (br.typeCompte ? `${{ pea: 'PEA', cto: 'Compte-titres', av: 'Assurance-vie', per: 'PER' }[br.typeCompte]} · ` : '') + (br.kind === 'positions' ? (br.valeur != null ? `Positions du compte ${br.compte} : valeur ${eur(br.valeur, 0)}${br.plusValue != null ? ` (plus-value latente ${eur(br.plusValue, 0)})` : ''}` : `Positions du compte ${br.compte} : valeur introuvable`)
+              : br.kind === 'historique' ? (br.versements != null ? `Historique du compte ${br.compte} : ${eur(br.versements, 0)} versés${br.retraits ? `, ${eur(br.retraits, 0)} retirés` : ''}` : `Historique du compte ${br.compte} : achats et ventes lus (pas de versements dans ce fichier)`)
+              : `Ordres du compte ${br.compte} : pas nécessaires pour l'audit (ignorés)`) });
         } else {
           const r = E.parseCSV(text, f.name);
           if (r.epargne) {
