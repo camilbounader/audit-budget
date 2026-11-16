@@ -112,7 +112,7 @@
 <div id="modal-root"></div>
 <div id="print-report"></div>
 <footer class="no-print max-w-5xl mx-auto px-4 pb-24 text-[11px] text-slate-400">
-  Outil pédagogique d'aide à la réflexion : ne constitue pas un conseil en investissement personnalisé (CIF) ni un conseil fiscal. Lecture PDF : pdf.js (Mozilla, licence Apache 2.0).
+  <b>Version du 16/11 11:30</b> · Outil pédagogique d'aide à la réflexion : ne constitue pas un conseil en investissement personnalisé (CIF) ni un conseil fiscal. Lecture PDF : pdf.js (Mozilla, licence Apache 2.0).
 </footer>
 
 <script id="engine">
@@ -2188,7 +2188,8 @@ $('#btnMenu').onclick = async () => {
     ${S.raw.length ? '<button class="btn-ghost w-full justify-center" id="m2">💾 Enregistrer cet audit</button>' : ''}
     ${S.raw.length ? '<button class="btn-ghost w-full justify-center" id="m6">📋 Copier le diagnostic (pour signaler un problème)</button>' : ''}
     <button class="btn-ghost w-full justify-center !text-red-600" id="m3">🗑 Tout effacer</button>
-    <button class="btn-ghost w-full justify-center" id="m4">Fermer</button></div></div>`;
+    <button class="btn-ghost w-full justify-center" id="m4">Fermer</button>
+    <p class="text-[11px] text-slate-400 text-center">Version du 16/11 11:30</p></div></div>`;
   const close = () => $('#modal-root').innerHTML = '';
   $('#mbg').onclick = e => { if (e.target.id === 'mbg') close(); };
   $('#m1').onclick = () => { close(); goTo('accueil'); };
