@@ -230,7 +230,7 @@ const OVR = {
   carte: { cat: 'carte_total', grp: 'interne' },
   loyer: { cat: 'logement', grp: 'contrainte' }, credit: { cat: 'credit', grp: 'contrainte' }, charge: { cat: 'contrainte_autre', grp: 'contrainte' },
   abonnement: { cat: 'abo_autre', grp: 'abonnement' }, epargne: { cat: 'epargne', grp: 'epargne' }, interne: { cat: 'interne', grp: 'interne' },
-  courant: { cat: 'autre', grp: 'courant' }, revenu: { cat: 'autre_credit', grp: 'revenu' }, salaire: { cat: 'salaire', grp: 'revenu' }
+  courant: { cat: 'autre', grp: 'courant' }, revenu: { cat: 'indemnites', grp: 'revenu' }, rembourse: { cat: 'remboursement', grp: 'interne' }, salaire: { cat: 'salaire', grp: 'revenu' }
 };
 // Codes que l'IA peut attribuer à une opération (décrits à l'IA tels quels)
 const AI_CODES = {
@@ -1328,7 +1328,7 @@ function renderCompris() {
 
 /* ---------- Opérations non reconnues : l'utilisateur les classe en un geste ---------- */
 const CLASS_OUT = [['', 'Je ne sais pas / laisser'], ['loyer', '🏠 Loyer ou charges du logement'], ['coloc', '👥 Remboursement entre colocataires'], ['interne', '🔁 Virement vers un autre de mes comptes'], ['carte', '💳 Total mensuel de ma carte (débit différé)'], ['epargne', '🐷 Mise de côté / épargne'], ['credit', '🏷️ Remboursement de crédit'], ['abonnement', '🔄 Abonnement'], ['charge', '📌 Autre charge fixe (pension, cotisation…)'], ['courant', '🛒 Dépense ponctuelle']];
-const CLASS_IN = [['', 'Je ne sais pas / laisser'], ['salaire', '💶 Salaire'], ['revenu', '➕ Autre revenu (aide, pension, loyer perçu…)'], ['coloc', '👥 Remboursement d\'un colocataire'], ['interne', '🔁 Virement depuis un autre de mes comptes']];
+const CLASS_IN = [['', 'Je ne sais pas / laisser'], ['salaire', '💶 Salaire'], ['revenu', '➕ Autre revenu régulier (indemnités, vacations, aide, pension…)'], ['rembourse', '↩️ Remboursement d\'une dépense (frais avancés, achat, ami…)'], ['coloc', '👥 Remboursement d\'un colocataire'], ['interne', '🔁 Virement depuis un autre de mes comptes']];
 function renderAClasser() {
   const L = E.toIdentify(catAll(), S.overrides);
   return screenWrap('Étape 3 bis', 'Quelques opérations à identifier', `
@@ -1673,9 +1673,18 @@ async function aiCall(system, user, maxTokens = 2048) {
   try {
     const r = await fetch(AI_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system, user, max_tokens: maxTokens }), signal: ctl.signal });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.error) throw new Error(j.error || ('erreur ' + r.status));
+    S.aiLog = S.aiLog || { appels: 0, erreurs: [] }; S.aiLog.appels++;
+    if (!r.ok || j.error) { const m = j.error || ('erreur ' + r.status); S.aiLog.erreurs.push(m.slice(0, 160)); throw new Error(m); }
+    S.aiLog.modele = j.model; S.aiLog.dernier = String(j.text || '').slice(0, 300);
     return j.text;
   } finally { clearTimeout(to); }
+}
+// Accepte les différentes formes de réponse des modèles : [[1,"code"]], [{"id":1,"code":"…"}], {"1":"code"}…
+const normCode = c => { const k = String(c || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[\s-]+/g, '_'); return E.AI_CODES[k] ? k : Object.keys(E.AI_CODES).find(x => k.startsWith(x)) || null; };
+function aiPairs(out) {
+  let arr = Array.isArray(out) ? out : out.r || out.resultats || out.results || out.operations || out.classification || null;
+  if (!arr && out && typeof out === 'object') arr = Object.entries(out).filter(([k]) => /^\d+$/.test(k));
+  return (arr || []).map(e => Array.isArray(e) ? [e[0], normCode(e[1])] : e && typeof e === 'object' ? [e.id ?? e.numero ?? e.n ?? e.num ?? e[0], normCode(e.code ?? e.categorie ?? e.category ?? e[1])] : [null, null]).filter(([n, c]) => n != null && c);
 }
 function parseJsonLoose(t) {
   const s = String(t || '').replace(/```(?:json)?/gi, '');
@@ -1715,7 +1724,7 @@ async function aiClassifyOps() {
     progress(`🤖 Analyse de vos opérations… (${Math.min(i + 100, items.length)}/${items.length})`);
     const lines = batch.map((x, j) => `${j + 1} | ${x.sens} | ${anonymize(x.lab).slice(0, 90)} | ${Math.round(x.l.reduce((a, b) => a + b, 0) / x.l.length)} € | ${x.l.length} fois`).join('\n');
     const out = parseJsonLoose(await aiCall(sys, `Codes possibles :\n${codes}\n\nOpérations (numéro | sens | libellé | montant moyen | fréquence sur la période) :\n${lines}`, 3000));
-    for (const [n, c] of (out.r || out.resultats || [])) { const x = batch[+n - 1]; if (x && E.AI_CODES[c]) { S.aiCats[x.k] = c; done++; } }
+    for (const [n, c] of aiPairs(out)) { const x = batch[+n - 1]; if (x && c) { S.aiCats[x.k] = c; done++; } }
   }
   return done;
 }
@@ -1783,6 +1792,47 @@ async function readDocSmart(doc, rows, lines) {
   }
   applyPdf(doc, kind, rows, lines);
   if (doc.aiErr) doc.warnings.push('IA indisponible (' + doc.aiErr + ') : lecture simple utilisée.');
+}
+
+/* ---------- Contrôle de cohérence : les plus grosses opérations non identifiées, à classer sur place ---------- */
+function bigUnknown(txs, n = 10) {
+  const nb = E.months(S.raw), g = {};
+  for (const t of txs) if (['autre', 'autre_credit'].includes(t.cat) && !t.manuel) { const k = E.opKey(t.label) + (t.amount > 0 ? '|+' : '|-'); (g[k] = g[k] || { key: E.opKey(t.label), sens: t.amount > 0 ? 'entree' : 'sortie', ex: t.label, tot: 0, n: 0 }); g[k].tot += Math.abs(t.amount); g[k].n++; }
+  return Object.values(g).map(x => ({ ...x, mois: x.tot / nb })).sort((a, b) => b.mois - a.mois).slice(0, n);
+}
+function coherenceHtml(d, txs) {
+  const autres = d.parCat.autre || 0;
+  const suspect = d.capaciteEpargne < -0.15 * d.revenus || autres > 0.3 * d.revenus || (d.revenusDeclares && d.revenusDetectes < 0.5 * d.revenusDeclares);
+  if (!suspect) return '';
+  const B = bigUnknown(txs);
+  return card(`<div class="flex gap-3"><span class="text-2xl">⚠️</span><div class="flex-1"><h2 class="font-semibold text-amber-900">Ces chiffres sont probablement faussés</h2>
+    <p class="text-sm text-slate-600 mt-1">${autres > 0.3 * d.revenus ? `${eur(autres, 0)}/mois partent en « Autres dépenses » sans être identifiés. ` : ''}${d.revenusDeclares && d.revenusDetectes < 0.5 * d.revenusDeclares ? `Seulement ${eur(d.revenusDetectes, 0)}/mois de revenus retrouvés sur les relevés (vous avez indiqué ${eur(d.revenusDeclares, 0)}). ` : ''}Causes habituelles : virements entre vos propres comptes comptés comme des dépenses, ou relevés d'un compte manquant. Classez les plus grosses opérations ci-dessous : le diagnostic se recalcule aussitôt.</p>
+    <div class="space-y-2 mt-3">${B.map(x => `<div class="border border-slate-200 rounded-xl p-3"><div class="flex justify-between gap-2 text-sm"><span class="font-medium truncate">${esc(x.ex)}</span><span class="whitespace-nowrap ${x.sens === 'entree' ? 'text-emerald-700' : ''}">${x.sens === 'entree' ? '+' : '−'}${eur(x.mois, 0)}/mois</span></div><div class="text-xs text-slate-400">${x.n} opération(s)</div>
+      <select data-fixovr="${esc(x.key)}" class="inp !mt-2 !py-1.5 !text-sm">${(x.sens === 'entree' ? CLASS_IN : CLASS_OUT).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>`).join('')}</div></div></div>`, '!border-amber-300 !bg-amber-50/40');
+}
+/* ---------- Diagnostic technique à copier (anonymisé) pour signaler un problème ---------- */
+function diagText() {
+  const { d, txs } = compute(), L = [];
+  L.push(`DIAGNOSTIC audit-budget ${new Date().toISOString().slice(0, 16)} · ${S.raw.length} opérations · ${E.months(S.raw)} mois`);
+  L.push(`IA : ${S.aiOn ? 'activée' : S.aiOn === false ? 'désactivée' : 'non demandée'} · disponible=${aiAvailable()} · catégories IA=${Object.keys(S.aiCats || {}).length} · appels=${S.aiLog?.appels || 0} · modèle=${S.aiLog?.modele || '-'}`);
+  if (S.aiLog?.erreurs?.length) L.push('Erreurs IA : ' + S.aiLog.erreurs.slice(-5).join(' | '));
+  if (S.aiLog?.dernier) L.push('Dernière réponse IA (début) : ' + anonymize(S.aiLog.dernier).replace(/\s+/g, ' ').slice(0, 250));
+  L.push('', 'DOCUMENTS');
+  S.docs.forEach(x => { const t = DOC_TEXT.get(x.uid); L.push(`- ${anonymize(x.name)} → ${x.kind} · ${String(x.detail || '').replace(/<[^>]+>/g, '')}${(x.warnings || []).length ? ' · ⚠ ' + x.warnings.join(' / ') : ''}${x.aiErr ? ' · IA: ' + x.aiErr : ''}${t ? ' · texte: ' + anonymize(t.lines.slice(0, 6).join(' / ')).slice(0, 220) : ''}`); });
+  L.push('', `SYNTHÈSE /mois : revenus ${Math.round(d.revenus)} (détectés ${Math.round(d.revenusDetectes)}) · contraintes ${Math.round(d.contraintes)} · abonnements ${Math.round(d.abonnements)} · courant ${Math.round(d.courant)} · frais ${Math.round(d.frais)} · épargne versée ${Math.round(d.epargneVersee)} · capacité ${Math.round(d.capaciteEpargne)}`);
+  L.push('Catégories : ' + Object.entries(d.parCat).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([c, v]) => `${c} ${Math.round(v)}`).join(' · '));
+  const nb = E.months(S.raw), g = {};
+  for (const t of txs) { const k = E.opKey(t.label) + (t.amount > 0 ? ' (+)' : ' (−)'); (g[k] = g[k] || { k, cat: t.cat, grp: t.grp, ai: !!t.ai, n: 0, tot: 0, ex: t.label }); g[k].n++; g[k].tot += t.amount; }
+  L.push('', 'PLUS GROS MOUVEMENTS (libellé anonymisé | catégorie/groupe | nb | €/mois)');
+  Object.values(g).sort((a, b) => Math.abs(b.tot) - Math.abs(a.tot)).slice(0, 30).forEach(x => L.push(`${anonymize(x.ex).slice(0, 70)} | ${x.cat}/${x.grp}${x.ai ? ' (IA)' : ''} | ${x.n} | ${Math.round(x.tot / nb)}`));
+  return L.join('\n');
+}
+async function showDiag() {
+  const t = diagText();
+  let copied = false; try { await navigator.clipboard.writeText(t); copied = true; } catch { }
+  $('#modal-root').innerHTML = `<div class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-center p-4 fade" id="dbg"><div class="card w-full max-w-2xl"><h3 class="text-lg font-semibold">📋 Diagnostic ${copied ? '(copié ✓)' : ''}</h3><p class="text-sm text-slate-600 mt-1">Anonymisé (numéros, IBAN, e-mails, noms précédés de M./Mme retirés). Relisez-le, puis collez-le dans la conversation avec Claude.</p><textarea readonly class="inp !mt-3 h-72 font-mono !text-xs">${esc(t)}</textarea><div class="flex justify-end gap-2 mt-3"><button class="btn-ghost" id="dcopy">Copier</button><button class="btn-primary" id="dclose">Fermer</button></div></div></div>`;
+  $('#dclose').onclick = () => $('#modal-root').innerHTML = '';
+  $('#dcopy').onclick = async () => { const ta = $('#dbg textarea'); ta.select(); try { await navigator.clipboard.writeText(t); toast('Copié ✓'); } catch { document.execCommand && document.execCommand('copy'); toast('Copié ✓'); } };
 }
 
 /* ---------- Plusieurs audits enregistrés, chacun chiffré (AES-GCM, clé dérivée de son code) ---------- */
@@ -1859,6 +1909,7 @@ function showTab(t) {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   ({ abonnements: renderAbonnements, synthese: renderSynthese, strategie: renderStrategie })[t]();
 }
+document.addEventListener('change', e => { const el = e.target.closest && e.target.closest('[data-fixovr]'); if (!el || !el.value) return; S.overrides[el.dataset.fixovr] = el.value; if (el.value === 'coloc' && !isColoc()) { S.profile.profilType = 'colocation'; S.profile.adultes = 1; } toast('Classé ✓ — diagnostic recalculé'); renderSynthese(); });
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) { showTab(b.dataset.tab); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
 function needData() { return !S.raw.length; }
 /* ---------- 2. ABONNEMENTS & FUITES ---------- */
@@ -1928,7 +1979,8 @@ function bars(rows) {
 }
 function renderSynthese() {
   if (needData('synthese')) return;
-  const { d, plan } = compute(), C = E.advise(d, S.profile), ENV = E.envelopes(d, S.profile);
+  const { d, plan, txs } = compute(), C = E.advise(d, S.profile), ENV = E.envelopes(d, S.profile);
+  const coherence = coherenceHtml(d, txs);
   const catRows = Object.entries(d.parCat).filter(([c]) => E.CAT_GRP[c] !== 'epargne').sort((a, b) => b[1] - a[1]).slice(0, 10).map(([c, v]) => ({ l: E.CAT_LABELS[c] || c, v, c: PALETTE[E.CAT_GRP[c]] || '#64748b' }));
   const reste = Math.max(0, d.revenus - d.depenses - d.epargneVersee);
   const prec = d.precautionCible > 0 ? Math.min(1, d.epargneDispo / d.precautionCible) : 1;
@@ -1941,6 +1993,7 @@ function renderSynthese() {
       ${kpi("Capacité d'épargne", eur(d.capaciteEpargne, 0) + '<span class="text-sm font-normal">/mois</span>', `taux d'épargne ${pct(d.tauxEpargne)}`, d.capaciteEpargne >= 0 ? 'emerald' : 'red')}
       ${kpi('Taux d\'endettement', pct(d.tauxEndettement), `seuil recommandé ${pct(E.CONFIG.seuilEndettement)}`, d.tauxEndettement > E.CONFIG.seuilEndettement ? 'red' : 'slate')}
     </div>
+    ${coherence}
     ${cl ? card(`<h2 class="font-semibold mb-2">Colocation : équilibre des remboursements</h2>
       <p class="text-xs text-slate-500 mb-3">Votre budget ne compte que votre quote-part des dépenses communes. Les virements Tricount servent à régler la différence : ils sont exclus des revenus et des dépenses, et contrôlés ici.</p>
       <div class="grid md:grid-cols-4 gap-3 text-sm">
@@ -2133,6 +2186,7 @@ $('#btnMenu').onclick = async () => {
     <button class="btn-ghost w-full justify-center" id="m1">⌂ Accueil · mes audits</button>
     <button class="btn-ghost w-full justify-center" id="m5">+ Nouvel audit</button>
     ${S.raw.length ? '<button class="btn-ghost w-full justify-center" id="m2">💾 Enregistrer cet audit</button>' : ''}
+    ${S.raw.length ? '<button class="btn-ghost w-full justify-center" id="m6">📋 Copier le diagnostic (pour signaler un problème)</button>' : ''}
     <button class="btn-ghost w-full justify-center !text-red-600" id="m3">🗑 Tout effacer</button>
     <button class="btn-ghost w-full justify-center" id="m4">Fermer</button></div></div>`;
   const close = () => $('#modal-root').innerHTML = '';
@@ -2142,6 +2196,7 @@ $('#btnMenu').onclick = async () => {
   $('#m3').onclick = () => { close(); wipe(); };
   $('#m4').onclick = close;
   $('#m5').onclick = () => { close(); newAudit(); };
+  if ($('#m6')) $('#m6').onclick = () => { close(); showDiag(); };
 };
 try { if (!/github\.io$|^localhost$|^127\./.test(location.hostname)) $('#officialBanner').classList.remove('hidden'); } catch { }
 render();
