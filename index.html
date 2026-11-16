@@ -1201,9 +1201,9 @@ function renderDocuments() {
   return screenWrap('Étape 2', 'Ajoutez vos documents', `
     <p class="text-slate-500 mt-2">Tout dans la même zone, en vrac : l'app reconnaît chaque document toute seule.</p>
     <label class="drop block text-center p-6 mt-6" id="dropZone">
-      <input type="file" id="fileInput" class="hidden" multiple accept=".pdf,.csv,.ofx,.qfx,.txt,application/pdf,text/csv">
+      <input type="file" id="fileInput" class="hidden" multiple accept=".pdf,.csv,.ofx,.qfx,.txt,.jpg,.jpeg,.png,.webp,application/pdf,text/csv,image/*">
       <div class="text-3xl">📥</div><div class="font-semibold text-blue-900 mt-2">Ajouter mes documents</div>
-      <div class="text-xs text-slate-500 mt-1">PDF, CSV ou OFX · plusieurs à la fois · lus sur cet appareil uniquement</div></label>
+      <div class="text-xs text-slate-500 mt-1">PDF, CSV, OFX ou photo · plusieurs à la fois · lus sur cet appareil uniquement</div></label>
     <div id="docMsg" class="text-sm mt-3"></div>
     <div class="space-y-3 mt-5">
       ${item('releve', '1', 'Relevés du compte courant', covTxt, st.releve, 'Obligatoire')}
@@ -1379,6 +1379,32 @@ async function openPdf(lib, bytes, name) {
   }
   throw new Error('mot de passe incorrect');
 }
+/* ---------- Lecture d'image (OCR) sur l'appareil : Tesseract.js, chargé seulement si besoin ---------- */
+let tessP = null, ocrOk = false;
+function loadTesseract() {
+  return tessP || (tessP = new Promise((res, rej) => {
+    if (window.Tesseract) return res(window.Tesseract);
+    const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    sc.onload = () => res(window.Tesseract); sc.onerror = () => { tessP = null; rej(new Error('outil de lecture d\'image indisponible (connexion internet nécessaire)')); };
+    document.head.appendChild(sc);
+  }));
+}
+async function askOcr(name) {
+  if (ocrOk) return true;
+  ocrOk = !!(await modal({ title: '📷 Document scanné', body: `« ${esc(name)} » est une image : il n'y a pas de texte à lire directement. L'app peut le <b>déchiffrer sur votre appareil</b> (reconnaissance de texte). La première fois, elle télécharge l'outil de lecture (environ 15 Mo, sans rien envoyer de vos documents) ; comptez 20 à 60 secondes par page.`, ok: 'Lire le document', cancel: 'Non merci' }));
+  return ocrOk;
+}
+async function ocrImages(images, name) {
+  const T = await loadTesseract(), w = await T.createWorker('fra'), lines = [];
+  try {
+    for (let i = 0; i < images.length; i++) {
+      docMsg(`🔎 Déchiffrage de ${esc(name)}${images.length > 1 ? ` (page ${i + 1}/${images.length})` : ''}… patientez`, 'blue');
+      const { data } = await w.recognize(images[i]);
+      lines.push(...String(data.text || '').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean));
+    }
+  } finally { try { await w.terminate(); } catch { } }
+  return lines;
+}
 async function pdfToRows(file) {
   const lib = await loadPdfJs();
   const doc = await openPdf(lib, new Uint8Array(await file.arrayBuffer()), file.name);
@@ -1395,6 +1421,16 @@ async function pdfToRows(file) {
     pr.sort((a, b) => b.y - a.y).forEach(r => { r.items.sort((a, b) => a.x - b.x); rows.push({ text: r.items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim(), items: r.items }); });
   }
   S.pdfDebug = { name: file.name, text: rows.map(r => r.text).join('\n').slice(0, 8000) };
+  if (rows.map(r => r.text).join('').replace(/\s/g, '').length < 30 && await askOcr(file.name)) {
+    const imgs = [];
+    for (let i = 1; i <= Math.min(doc.numPages, 4); i++) {
+      const page = await doc.getPage(i), vp = page.getViewport({ scale: 2 }), c = document.createElement('canvas');
+      c.width = vp.width; c.height = vp.height; await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise; imgs.push(c);
+    }
+    const lines = await ocrImages(imgs, file.name);
+    if (lines.join('').replace(/\s/g, '').length < 30) throw new Error('le texte de ce scan n\'a pas pu être déchiffré (image trop floue ?)');
+    const out = lines.map(text => ({ text, items: [] })); out.ocr = true; return out;
+  }
   if (rows.map(r => r.text).join('').replace(/\s/g, '').length < 30) throw new Error(/paie|salaire|bulletin|\d{2}[._-]\d{2}/i.test(file.name) ? 'document scanné (image), illisible. Si c\'est une fiche de paie, pas d\'inquiétude : votre salaire est déjà lu sur vos relevés bancaires.' : 'document scanné (image) : pas de texte à lire. Saisissez l\'information à la main dans les étapes suivantes.');
   return rows;
 }
@@ -1448,7 +1484,15 @@ async function handleFiles(files) {
     docMsg(`⏳ Lecture de ${esc(f.name)}…`, 'blue');
     const doc = { name: f.name, ok: true, warnings: [], uid: ++docSeq };
     try {
-      if (/\.(jpe?g|png|heic|webp)$/i.test(f.name)) throw new Error('une photo ne peut pas être lue : téléchargez le PDF depuis l\'appli de la banque');
+      if (/\.(heic|heif)$/i.test(f.name)) throw new Error('format HEIC non lisible : faites plutôt une capture d\'écran, ou réglez l\'appareil photo sur « Le plus compatible » (JPG)');
+      if (/\.(jpe?g|png|webp)$/i.test(f.name) || /^image\//.test(f.type)) {
+        if (!(await askOcr(f.name))) throw new Error('photo non lue (lecture d\'image refusée)');
+        const lines = await ocrImages([f], f.name), rows = lines.map(text => ({ text, items: [] }));
+        if (lines.join('').replace(/\s/g, '').length < 30) throw new Error('le texte de cette photo n\'a pas pu être déchiffré (photo floue ou de travers ?)');
+        DOC_TEXT.set(doc.uid, { rows, lines }); doc.texte = true;
+        applyPdf(doc, E.classifyPdf(lines), rows, lines); doc.warnings.push('Lu par reconnaissance d\'image : vérifiez les montants.');
+        S.docs.push(doc); S.applied = false; continue;
+      }
       if (/\.(ofx|qfx)$/i.test(f.name)) {
         const r = E.parseOFX(await readText(f), f.name), { added, skipped } = addTx(r.transactions, doc.uid), sav = r.accounts.filter(a => a.savings && a.solde != null);
         sav.forEach(a => S.profile[SAV_FIELD[a.type]] = a.solde);
@@ -1456,7 +1500,7 @@ async function handleFiles(files) {
       } else if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
         const rows = await pdfToRows(f), lines = rows.map(r => r.text);
         DOC_TEXT.set(doc.uid, { rows, lines }); doc.texte = true;
-        applyPdf(doc, E.classifyPdf(lines), rows, lines);
+        applyPdf(doc, E.classifyPdf(lines), rows, lines); if (rows.ocr) doc.warnings.push('Document scanné, lu par reconnaissance d\'image : vérifiez les montants.');
       } else {
         const text = await readText(f), br = E.parseBrokerCSV(text, f.name);
         if (br) {
