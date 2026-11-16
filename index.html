@@ -255,6 +255,20 @@ function splitCSVLine(line, d) {
   }
   out.push(cur); return out.map(x => x.trim());
 }
+// Découpe tout le fichier en lignes en respectant les guillemets : un libellé peut contenir des retours à la ligne (Crédit Agricole…)
+function csvRows(text, d) {
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === d) { row.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cur); cur = ''; if (row.some(x => x.trim())) rows.push(row); row = []; }
+    else cur += c;
+  }
+  row.push(cur); if (row.some(x => x.trim())) rows.push(row);
+  return rows.map(r => r.map(x => x.replace(/\s+/g, ' ').trim()));
+}
 function detectDelimiter(lines) {
   let best = ';', bestScore = -1;
   for (const d of [';', '\t', ',', '|']) {
@@ -275,10 +289,11 @@ function headerRole(cell) {
   return null;
 }
 function parseCSV(text, source = 'csv') {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+  const clean = text.replace(/^\ufeff/, '');
+  const lines = clean.split(/\r?\n/).filter(l => l.trim());
   if (!lines.length) return { transactions: [], warnings: ['Fichier vide'] };
   const d = detectDelimiter(lines);
-  const rows = lines.map(l => splitCSVLine(l, d));
+  const rows = csvRows(clean, d);
   let map = null, start = 0;
   for (let i = 0; i < Math.min(rows.length, 30); i++) {
     const roles = {}; rows[i].forEach((c, j) => { const r = headerRole(c); if (r && roles[r] == null) roles[r] = j; });
@@ -303,6 +318,13 @@ function parseCSV(text, source = 'csv') {
     let bj = -1, bl = -1; for (let j = 0; j < nc; j++) { if (Object.values(map).includes(j)) continue; const l = mean(rows.slice(start, start + 30).map(r => (r[j] || '').length)); if (l > bl) { bl = l; bj = j; } }
     map.label = bj;
   }
+  // Préambule (avant l'en-tête) : nom du compte et solde — un export de livret n'est pas un relevé de budget
+  const pre = rows.slice(0, Math.max(0, start - 1)).map(r => r.join(' ')).join(' \n ');
+  const head = compactUp(pre + ' ' + source);
+  const hw = normText(pre + ' ' + source).replace(/ CAISSE D ?EPARGNE /g, ' ');
+  const epargne = / (LIVRET|LIVRETS|LDDS|LDD|LEP|CSL|PEL|CEL) | COMPTE SUR LIVRET | PLAN D ?EPARGNE | EPARGNE POPULAIRE | COMPTE EPARGNE /.test(hw) && !/ COMPTE (DE DEPOT|COURANT|CHEQUES?) /.test(hw);
+  const sm = pre.match(/solde[^\n]*?(-?\d{1,3}(?:[ .\u00a0\u202f]\d{3})*,\d{2})/i);
+  const solde = sm ? parseAmount(sm[1]) : null;
   const transactions = [];
   for (const r of rows.slice(start)) {
     const date = parseDate(r[map.date]); if (!date) continue;
@@ -316,8 +338,54 @@ function parseCSV(text, source = 'csv') {
     const label = (r[map.label] || '').replace(/\s+/g, ' ').trim() || '(sans libellé)';
     transactions.push({ date, label, amount: round2(amount), source });
   }
-  if (!transactions.length) warnings.push('Aucune opération lisible dans ce fichier.');
-  return { transactions, warnings };
+  if (!transactions.length && !epargne) warnings.push('Aucune opération lisible dans ce fichier.');
+  return { transactions, warnings, epargne: epargne ? { type: savingsType(head), solde } : null, solde };
+}
+
+/* ---------- Exports de courtier (PEA / compte-titres) : POSITIONS, HISTORY, ORDERS… ---------- */
+function brokerKind(name, text) {
+  const n = compactUp(name), h = compactUp(text.slice(0, 600));
+  if (/POSITION|PORTEFEUILLE|HOLDING|VALORISATION/.test(n)) return 'positions';
+  if (/HISTORY|HISTORIQUE|MOUVEMENT|TRANSACTION|OPERATIONS/.test(n) && /ISIN|QUANTITE|QUANTITY|TITRE|INSTRUMENT|VERSEMENT|DEPOSIT/.test(h)) return 'historique';
+  if (/ORDER|ORDRE/.test(n)) return 'ordres';
+  if (/ISIN/.test(h) && /QUANTITE|QUANTITY|QTE/.test(h)) return /VALORISATION|VALEUR|MARKETVALUE|MONTANT/.test(h) ? 'positions' : 'ordres';
+  return null;
+}
+function parseBrokerCSV(text, name) {
+  const kind = brokerKind(name, text); if (!kind) return null;
+  const lines = text.replace(/^\ufeff/, '').split(/\r?\n/).filter(l => l.trim()), d = detectDelimiter(lines), rows = csvRows(text.replace(/^\ufeff/, ''), d);
+  const compte = (name.match(/(\d{6,})/) || [])[1] || name;
+  const out = { kind, compte, valeur: null, versements: null, retraits: null, lignes: 0 };
+  // ligne d'en-tête = première ligne avec au moins 3 cellules non numériques
+  let hi = rows.findIndex(r => r.filter(c => c && isNaN(parseAmount(c))).length >= 3); if (hi < 0) return out;
+  const H = rows[hi].map(c => compactUp(c)), data = rows.slice(hi + 1).filter(r => r.length >= Math.min(3, H.length));
+  const col = (inc, exc = []) => H.findIndex(h => inc.some(x => h.includes(x)) && !exc.some(x => h.includes(x)));
+  const num = (r, j) => j < 0 ? NaN : parseAmount(r[j]);
+  if (kind === 'positions') {
+    let j = col(['VALORISATION', 'MARKETVALUE', 'VALEURDEMARCHE', 'VALEURACTUELLE', 'MONTANTVALORISE', 'VALUE', 'VALEUR', 'MONTANT', 'TOTAL'], ['UNIT', 'PRIX', 'PRICE', 'PRU', 'REVIENT', 'COST', 'ACHAT', 'LATENT', 'PLUS', 'GAIN', 'VARIATION', 'PERF']);
+    let sum = 0, n = 0;
+    if (j >= 0) data.forEach(r => { const v = num(r, j); if (!isNaN(v)) { sum += v; n++; } });
+    else {
+      const q = col(['QUANTITE', 'QUANTITY', 'QTE', 'NOMBRE', 'SHARES']), c = col(['COURS', 'DERNIER', 'LAST', 'PRICE', 'PRIX'], ['REVIENT', 'ACHAT', 'PRU', 'MOYEN']);
+      data.forEach(r => { const a = num(r, q), b = num(r, c); if (!isNaN(a) && !isNaN(b)) { sum += a * b; n++; } });
+    }
+    out.valeur = n ? round2(sum) : null; out.lignes = n;
+    const cash = col(['ESPECES', 'LIQUIDITE', 'CASH', 'SOLDE']); // parfois une ligne « espèces »
+    return out;
+  }
+  if (kind === 'historique') {
+    const a = col(['MONTANTNET', 'NETAMOUNT', 'MONTANT', 'AMOUNT', 'NET', 'TOTAL'], ['BRUT', 'UNIT', 'FRAIS', 'FEE', 'COMMISSION']);
+    const t = col(['TYPE', 'NATURE', 'OPERATION', 'LIBELLE', 'DESCRIPTION', 'SENS', 'MOUVEMENT']);
+    let vers = 0, ret = 0, n = 0;
+    data.forEach(r => {
+      const lib = normText(r.join(' ')), v = num(r, a); if (isNaN(v)) return;
+      if (/ (VERSEMENT|DEPOT|DEPOSIT|APPORT|VIREMENT RECU|VIREMENT ENTRANT|CASH IN|ALIMENTATION|CREDIT ESPECES) /.test(lib)) { vers += Math.abs(v); n++; }
+      else if (/ (RETRAIT|WITHDRAW|VIREMENT EMIS|VIREMENT SORTANT|CASH OUT|REMBOURSEMENT) /.test(lib)) { ret += Math.abs(v); n++; }
+    });
+    out.versements = n ? round2(vers) : null; out.retraits = n ? round2(ret) : null; out.lignes = data.length;
+    return out;
+  }
+  out.lignes = data.length; return out; // ordres : rien d'utile pour le budget
 }
 
 /* ---------- Parsers de texte PDF (relevé, avis d'impôt, fiche de paie) ---------- */
@@ -346,8 +414,8 @@ const toLines = t => Array.isArray(t) ? t : String(t || '').split(/\n/);
 function parseAvisImposition(text) {
   const L = toLines(text);
   const rfr = findLabeled(L, [{ inc: 'REVENUFISCALDEREFERENCE' }], { min: 0, max: 5e6, ints: true }) || findLabeled(L, [{ inc: 'REVENUFISCALDEREFERENCE' }], { max: 5e6 });
-  const partsL = findLabeled(L, [{ inc: 'NOMBREDEPARTS' }], { min: 0.5, max: 20 });
-  const partsI = partsL ? null : (L.join(' ').match(/nombre de parts\D{0,25}?(\d+(?:[,.]\d+)?)/i) || [])[1];
+  const partsL = findLabeled(L, [{ inc: 'NOMBREDEPARTS' }, { inc: 'NBDEPARTS' }, { inc: 'NBREDEPARTS' }, { inc: 'NOMBREDEPART' }, { inc: 'QUOTIENTFAMILIAL', exc: ['PLAFON'] }], { min: 0.5, max: 20 });
+  const partsI = partsL ? null : (L.join(' ').match(/(?:nombre|nb|nbre) de parts?\D{0,40}?(\d{1,2}(?:[,.]\d{1,2})?)(?!\d)/i) || [])[1];
   return { rfr: rfr && rfr.value, parts: partsL ? partsL.value : partsI ? parseAmount(partsI) : null, ligne: rfr && rfr.ligne };
 }
 function parseFichePaie(text) {
@@ -850,8 +918,10 @@ function envelopes(d, p) {
   else if (A && A < 35) perNote = `TMI ${Math.round(d.tmi * 100)} % mais blocage d'environ ${64 - A} ans : intéressant surtout si vous visez l'achat de la résidence principale (cas de déblocage anticipé), sinon PEA/AV plus souples.`;
   else perNote = `TMI ${Math.round(d.tmi * 100)} % : chaque 100 € versé réduit l'impôt d'environ ${Math.round(d.tmi * 100)} € (dans le plafond indiqué sur l'avis). Capital fiscalisé à la sortie.`;
   add({ nom: 'PER', montant: +p.perMontant || 0, liquidite: 'Bloqué jusqu\'à la retraite*', note: perNote });
+  const pv = (nom, val, verse) => { const e = out.find(x => x.nom === nom); if (e && +verse > 0 && +val > 0) e.note += ` Versé ${Math.round(+verse).toLocaleString('fr-FR')} € → ${+val >= +verse ? 'plus-value' : 'moins-value'} latente de ${Math.round(Math.abs(+val - +verse)).toLocaleString('fr-FR')} €.`; };
+  pv('PEA', p.peaValeur, p.peaVersements); pv('Assurance-vie', p.avMontant, p.avVersements);
   if (+p.epSalMontant) add({ nom: 'Épargne salariale (PEE/PERCOL)', montant: +p.epSalMontant, liquidite: 'Bloqué 5 ans (PEE) / retraite', note: 'Si votre employeur abonde, c\'est souvent le meilleur rendement garanti : versez au moins le montant qui déclenche l\'abondement maximal.' });
-  if (+p.ctoMontant) add({ nom: 'Compte-titres (CTO)', montant: +p.ctoMontant, liquidite: 'Disponible', note: 'Aucun avantage fiscal (flat tax). À réserver à ce qui ne rentre pas dans le PEA ou l\'assurance-vie.' });
+  if (+p.ctoMontant) { add({ nom: 'Compte-titres (CTO)', montant: +p.ctoMontant, liquidite: 'Disponible', note: 'Aucun avantage fiscal (flat tax). À réserver à ce qui ne rentre pas dans le PEA ou l\'assurance-vie.' }); pv('Compte-titres (CTO)', p.ctoMontant, p.ctoVersements); }
   return out;
 }
 
@@ -904,7 +974,7 @@ function investPlan(d, p, inv) {
     finals: { pessimiste: scen('pessimiste').at(-1), median: med.at(-1), optimiste: scen('optimiste').at(-1), verses: verses.at(-1), fraisChers: fraisChers.at(-1) } };
 }
 
-global.Engine = { toIdentify, opKey, months, CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
+global.Engine = { parseBrokerCSV, brokerKind, toIdentify, opKey, months, CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="ui">
@@ -933,7 +1003,7 @@ const fresh = () => ({
   screen: 'accueil', device: detectDevice(), banques: [], tutoBank: null,
   profile: { profilType: 'jeune_actif', adultes: 1, enfantsMoins14: 0, enfantsPlus14: 0, logement: 'locataire', statut: '', horizon: '', tolerance: '', projets: [],
     colocNb: 2, colocPart: '', colocAliases: 'TRICOUNT', externes: [] },
-  docs: [], raw: [], flags: {}, shared: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
+  docs: [], raw: [], flags: {}, shared: {}, overrides: {}, placements: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
   inv: { initial: 0, mensuel: null, horizon: null, fraisEtf: 0.2, fraisFonds: 1.8 }
 });
 let S = fresh();
@@ -945,7 +1015,7 @@ const normAlias = a => a.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().
 function compute() {
   const p = S.profile, coloc = isColoc();
   const aliases = coloc ? String(p.colocAliases || '').split(/[,;]/).map(normAlias).filter(Boolean) : [];
-  const txs = S.raw.map(t => E.categorize(t, { colocAliases: aliases }));
+  const txs = S.raw.map(t => E.categorize(t, { colocAliases: aliases, overrides: S.overrides }));
   const part = coloc ? colocPart() : 1, sharedSet = new Set(coloc ? Object.keys(S.shared).filter(k => S.shared[k]) : []);
   const recurring = E.detectRecurring(txs).map(r => ({ ...r, part: sharedSet.has(r.merchant) ? part : 1 }));
   const anomalies = E.detectAnomalies(txs, recurring, p);
@@ -1015,7 +1085,7 @@ const tutoSteps = (k) => {
 
 /* ---------- Écrans du parcours ---------- */
 const SCREENS = [
-  { id: 'accueil' }, { id: 'banque' }, { id: 'documents' }, { id: 'compris' },
+  { id: 'accueil' }, { id: 'banque' }, { id: 'documents' }, { id: 'compris' }, { id: 'a_classer', when: () => E.toIdentify(S.raw.map(t => E.categorize(t)), S.overrides).length > 0 },
   { id: 'q_age' }, { id: 'q_pro' }, { id: 'q_foyer' }, { id: 'q_coloc', when: isColoc }, { id: 'q_epargne' }, { id: 'q_credits' },
   { id: 'q_projets' }, { id: 'q_horizon' }, { id: 'q_risque' }, { id: 'resultats' }
 ];
@@ -1068,6 +1138,7 @@ function renderWizard() {
     <p class="text-xs text-slate-400 mt-3">${S.banques.length > 1 ? `${S.banques.length} banques sélectionnées : ajoutez les relevés de chacune à l'étape suivante, l'app les regroupe.` : 'Comptes dans plusieurs banques (compte courant, livret, compte joint…) ? Sélectionnez-les toutes.'}</p>`, { disabled: !S.banques.length });
   else if (id === 'documents') h = renderDocuments();
   else if (id === 'compris') h = renderCompris();
+  else if (id === 'a_classer') h = renderAClasser();
   else if (id === 'q_age') h = screenWrap('Votre profil', +p.adultes >= 2 ? 'Quel âge avez-vous ?' : 'Quel âge avez-vous ?', `
     <div class="grid ${+p.adultes >= 2 ? 'grid-cols-2' : ''} gap-4 mt-6">${field(+p.adultes >= 2 ? 'Vous' : '', num('age1', 'ex. 32', true))}${+p.adultes >= 2 ? field('Votre conjoint(e)', num('age2', 'ex. 34', true)) : ''}</div>
     ${why('Les règles de l\'épargne changent avec l\'âge : intérêt du PER (bloqué jusqu\'à la retraite), versements en assurance-vie avant ou après 70 ans, horizon de placement.')}`, { disabled: !p.age1 });
@@ -1107,6 +1178,18 @@ function docStatus() {
   const cov = E.coverage(S.raw);
   return { cov, releve: S.raw.length > 0, epargne: by('epargne').length > 0, avis: by('avis').length > 0, paie: by('paie').length > 0, credit: by('credit').length > 0 };
 }
+const RECLASS = [['', 'De quoi s\'agit-il ?'], ['paie', 'Fiche de paie'], ['avis', 'Avis d\'impôt'], ['credit', 'Tableau d\'amortissement / offre de prêt / relevé de crédit'], ['epargne:livretA', 'Relevé de Livret A'], ['epargne:ldds', 'Relevé de LDDS'], ['epargne:lep', 'Relevé de LEP'], ['epargne:livretsAutres', 'Autre livret / compte épargne'], ['epargne:pea', 'Relevé de PEA'], ['epargne:cto', 'Relevé de compte-titres'], ['epargne:av', 'Relevé d\'assurance-vie'], ['epargne:per', 'Relevé de PER'], ['releve', 'Relevé de compte courant']];
+function docItem(d, i) {
+  const ico = { releve: '🏦', epargne: '🐷', avis: '🧾', paie: '💶', credit: '🏷️', placement: '📈', inconnu: '❓', erreur: '⚠️' }[d.kind] || '📄';
+  const tone = d.ok ? 'text-slate-500' : d.kind === 'inconnu' ? 'text-amber-700' : 'text-red-600';
+  const pl = d.kind === 'placement' ? S.placements[d.compte] : null;
+  const firstOfAccount = pl && S.docs.findIndex(x => x.kind === 'placement' && x.compte === d.compte) === i;
+  const txt = DOC_TEXT.get(d.uid);
+  return `<li class="card !p-3 text-sm ${d.kind === 'inconnu' ? '!border-amber-300' : ''}"><div class="flex items-start gap-3"><span class="text-lg">${ico}</span><span class="flex-1 min-w-0"><span class="block font-medium truncate">${esc(d.name)}</span><span class="block text-xs ${tone}">${d.detail}</span>${(d.warnings || []).map(w => `<span class="block text-xs text-amber-700">⚠ ${esc(w)}</span>`).join('')}</span><button type="button" data-deldoc="${i}" class="text-slate-400 hover:text-red-600 px-1">✕</button></div>
+    ${txt && (d.kind === 'inconnu' || !d.ok || d.choisi) ? `<div class="mt-2 flex items-center gap-2"><span class="text-xs text-slate-500 whitespace-nowrap">${d.kind === 'inconnu' ? 'C\'est :' : 'Mal reconnu ? C\'est :'}</span><select data-reclass="${i}" class="inp-sm flex-1 min-w-0">${RECLASS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>` : ''}
+    ${firstOfAccount ? `<div class="mt-2 flex items-center gap-2"><span class="text-xs text-slate-500 whitespace-nowrap">Le compte ${esc(d.compte)} est :</span><select data-pltype="${esc(d.compte)}" class="inp-sm flex-1 min-w-0"><option value="">— choisir —</option>${PLACEMENT_TYPES.map(([v, l]) => `<option value="${v}" ${pl.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>${!pl.type ? '<p class="text-[11px] text-amber-700 mt-1">Indiquez le type de ce compte pour que sa valeur et vos versements soient pris en compte.</p>' : ''}` : ''}
+    ${txt ? `<details class="mt-2"><summary class="text-[11px] text-slate-400">Voir le texte lu</summary><pre class="mt-1 p-2 bg-slate-900 text-slate-100 rounded-lg max-h-48 overflow-auto whitespace-pre-wrap text-[10px]">${esc(txt.lines.join('\n').slice(0, 4000))}</pre></details>` : ''}</li>`;
+}
 function renderDocuments() {
   const st = docStatus(), cov = st.cov;
   const covTxt = st.releve ? `${E.months(S.raw)} mois${cov.debut ? ` · ${moisLabel(cov.debut)} → ${moisLabel(cov.fin)}` : ''}${cov.manquants.length ? ` · <span class="text-amber-700">manque ${cov.manquants.map(moisLabel).join(', ')}</span>` : ''}` : '3 mois minimum, 6 idéalement';
@@ -1129,9 +1212,8 @@ function renderDocuments() {
       ${item('credit', '4', 'Crédits en cours', st.credit ? 'Document(s) lu(s) ✓' : 'Tableau d\'amortissement, offre de prêt…', st.credit, 'Si vous avez un crédit')}
       ${item('paie', '5', 'Fiche(s) de paie', st.paie ? 'Lue(s) ✓' : 'Net avant impôt, primes', st.paie, 'Facultatif')}
     </div>
-    ${S.docs.length ? `<div class="mt-6"><div class="text-sm font-semibold text-slate-700 mb-2">Documents ajoutés</div><ul class="space-y-2">${S.docs.map((d, i) => `<li class="card !p-3 flex items-start gap-3 text-sm"><span class="text-lg">${{ releve: '🏦', epargne: '🐷', avis: '🧾', paie: '💶', credit: '🏷️', erreur: '⚠️' }[d.kind] || '📄'}</span><span class="flex-1 min-w-0"><span class="block font-medium truncate">${esc(d.name)}</span><span class="block text-xs ${d.ok ? 'text-slate-500' : 'text-red-600'}">${d.detail}</span>${(d.warnings || []).map(w => `<span class="block text-xs text-amber-700">⚠ ${esc(w)}</span>`).join('')}</span><button type="button" data-deldoc="${i}" class="text-slate-400 hover:text-red-600 px-1">✕</button></li>`).join('')}</ul></div>` : ''}
-    ${warnCov ? `<p class="text-sm text-amber-800 bg-amber-50 rounded-xl p-3 mt-4">Seulement ${E.months(S.raw)} mois : l'analyse sera possible mais moins fiable (abonnements trimestriels non détectés). 6 mois, c'est l'idéal.</p>` : ''}
-    ${pdfDebugHtml()}`, { disabled: !st.releve });
+    ${S.docs.length ? `<div class="mt-6"><div class="text-sm font-semibold text-slate-700 mb-2">Documents ajoutés (${S.docs.length})</div><ul class="space-y-2">${S.docs.map(docItem).join('')}</ul></div>` : ''}
+    ${warnCov ? `<p class="text-sm text-amber-800 bg-amber-50 rounded-xl p-3 mt-4">Seulement ${E.months(S.raw)} mois : l'analyse sera possible mais moins fiable (abonnements trimestriels non détectés). 6 mois, c'est l'idéal.</p>` : ''}`, { disabled: !st.releve });
 }
 function pdfDebugHtml() {
   if (!S.pdfDebug) return '';
@@ -1162,11 +1244,23 @@ function renderCompris() {
       ${I.autresRevenus ? row('🤝', 'Autres revenus réguliers (CAF, etc.)', eur(I.autresRevenus, 0) + '/mois', `<input type="number" inputmode="decimal" data-k="autresRevenus" value="${esc(p.autresRevenus)}" class="inp-sm w-36"> €/mois`, 'relevés') : ''}
       ${row('🏠', 'Logement', { locataire: 'Locataire', proprietaire_credit: 'Propriétaire avec crédit', proprietaire: 'Propriétaire', heberge: 'Hébergé' }[p.logement], `<select data-k="logement" class="inp-sm">${[['locataire', 'Locataire'], ['proprietaire_credit', 'Propriétaire avec crédit'], ['proprietaire', 'Propriétaire sans crédit'], ['heberge', 'Hébergé']].map(([v, l]) => `<option value="${v}" ${p.logement === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`, I.logement ? 'relevés' : '')}
       ${I.coloc ? row('👥', 'Colocation probable', `${I.coloc.nb} virements « ${esc(I.coloc.alias)} » repérés`, `<label class="flex items-center gap-2 text-sm"><input type="checkbox" id="cbColoc" ${isColoc() ? 'checked' : ''} class="w-4 h-4"> Oui, je suis en colocation</label>`, 'relevés') : ''}
-      ${(() => { const dc = E.detectCredits(S.raw.map(t => E.categorize(t))); return dc.length ? row('🏷️', 'Crédits repérés sur vos relevés', dc.map(c => `${esc(c.organisme)} ${eur(c.mensualite, 0)}/mois`).join(' · '), '<span class="text-xs text-slate-500">Vous pourrez les compléter à l\'étape « Vos crédits ».</span>', 'relevés') : ''; })()}
+      ${(() => { const dc = E.detectCredits(S.raw.map(t => E.categorize(t, { overrides: S.overrides }))); return dc.length ? row('🏷️', 'Crédits repérés sur vos relevés', dc.map(c => `${esc(c.organisme)} ${eur(c.mensualite, 0)}/mois`).join(' · '), '<span class="text-xs text-slate-500">Vous pourrez les compléter à l\'étape « Vos crédits ».</span>', 'relevés') : ''; })()}
       ${row('🐷', 'Épargne', ep.length ? ep.map(([k, l]) => `${l} ${eur(+p[k], 0)}`).join(' · ') : 'Aucun solde lu', ep.length ? '' : '<span class="text-xs text-slate-500">On vous la demandera dans un instant.</span>', ep.length ? 'relevés' : '')}
       ${I.versementEpargne ? row('↪️', 'Virements vers vos livrets', `≈ ${eur(I.versementEpargne, 0)}/mois`, `<div class="text-sm text-slate-600">Dont <input type="number" inputmode="decimal" data-k="provisionCharges" value="${esc(p.provisionCharges ?? '')}" placeholder="0" class="inp-sm w-24"> €/mois mis de côté pour des <b>dépenses prévues</b> (taxe foncière, copro, assurance annuelle…)</div><p class="text-xs text-slate-400 mt-1">Cet argent n'est pas de l'épargne : il est déjà dépensé d'avance. Il sera compté dans vos charges.</p>`, 'relevés') : ''}
       ${row('🧾', 'Tranche d\'imposition (facultatif)', p.rfr ? `RFR ${(+p.rfr).toLocaleString('fr-FR')} € · ${p.parts || '?'} part(s) · taux marginal ≈ ${t != null ? Math.round(t * 100) + ' %' : '?'}` : 'Non renseignée', `<p class="text-xs text-slate-500 mb-2">L'impôt est déjà prélevé à la source sur le salaire : rien à payer en plus ici. Ces deux chiffres de l'avis d'impôt servent seulement à estimer votre tranche, pour savoir si un PER ou un LEP vous intéresse.</p><div class="flex gap-2 flex-wrap items-center text-sm">Revenu fiscal de référence <input type="number" inputmode="decimal" data-k="rfr" value="${esc(p.rfr)}" class="inp-sm w-32"> parts <input type="number" inputmode="decimal" data-k="parts" value="${esc(p.parts)}" class="inp-sm w-20"></div>`, p.rfr && S.docs.some(d => d.kind === 'avis' && d.ok) ? 'avis d\'impôt' : '')}
     </div>`);
+}
+
+/* ---------- Opérations non reconnues : l'utilisateur les classe en un geste ---------- */
+const CLASS_OUT = [['', 'Je ne sais pas / laisser'], ['loyer', '🏠 Loyer ou charges du logement'], ['coloc', '👥 Remboursement entre colocataires'], ['interne', '🔁 Virement vers un autre de mes comptes'], ['epargne', '🐷 Mise de côté / épargne'], ['credit', '🏷️ Remboursement de crédit'], ['abonnement', '🔄 Abonnement'], ['charge', '📌 Autre charge fixe (pension, cotisation…)'], ['courant', '🛒 Dépense ponctuelle']];
+const CLASS_IN = [['', 'Je ne sais pas / laisser'], ['salaire', '💶 Salaire'], ['revenu', '➕ Autre revenu (aide, pension, loyer perçu…)'], ['coloc', '👥 Remboursement d\'un colocataire'], ['interne', '🔁 Virement depuis un autre de mes comptes']];
+function renderAClasser() {
+  const L = E.toIdentify(S.raw.map(t => E.categorize(t)), S.overrides);
+  return screenWrap('Étape 3 bis', 'Quelques opérations à identifier', `
+    <p class="text-slate-500 mt-2">Ces virements et prélèvements reviennent ou sont importants, mais leur libellé ne dit pas ce que c'est. Une réponse suffit pour chacun : elle s'applique à toutes les opérations identiques.</p>
+    <div class="space-y-2 mt-6">${L.map((x, i) => `<div class="card hl !p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="font-semibold text-slate-900 truncate">${esc(x.exemple)}</div><div class="text-xs text-slate-500 mt-0.5">${x.sens === 'entree' ? '⬇ Reçu' : '⬆ Envoyé'} · ${x.n} fois · ≈ ${eur(x.montant, 0)}</div></div></div>
+      <select data-ovr="${esc(x.key)}" class="inp !mt-3 !py-2 !text-sm">${(x.sens === 'entree' ? CLASS_IN : CLASS_OUT).map(([v, l]) => `<option value="${v}" ${(S.overrides[x.key] || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}</div>
+    ${why('Virement au propriétaire, aux colocs ou vers votre propre livret : la banque écrit juste un nom. Les « virements entre mes comptes » sont retirés des calculs, pour ne pas compter deux fois le même argent quand vous importez plusieurs comptes.')}`);
 }
 
 /* ---------- Épargne : prérempli, saisie rapide ---------- */
@@ -1181,10 +1275,10 @@ function renderEpargne() {
     <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mt-6 mb-2">Placé sur le long terme</div>
     <div class="space-y-2">
       ${line('peaValeur', 'PEA', 'Valeur actuelle', `<div class="flex items-center justify-end gap-2 mt-2 text-xs text-slate-500">Total versé <input type="number" inputmode="decimal" data-k="peaVersements" value="${esc(p.peaVersements ?? '')}" placeholder="€" class="inp-sm w-24 text-right"></div>${year('peaAnnee', 'Ouvert en')}`)}
-      ${line('avMontant', 'Assurance-vie', 'Valeur actuelle', year('avAnnee', 'Ouverte en'))}
+      ${line('avMontant', 'Assurance-vie', 'Valeur actuelle', `<div class="flex items-center justify-end gap-2 mt-2 text-xs text-slate-500">Total versé <input type="number" inputmode="decimal" data-k="avVersements" value="${esc(p.avVersements ?? '')}" placeholder="€" class="inp-sm w-24 text-right"></div>${year('avAnnee', 'Ouverte en')}`)}
       ${line('perMontant', 'PER', 'Plan d\'épargne retraite')}
       ${line('epSalMontant', 'Épargne salariale', 'PEE, PERCOL (via l\'employeur)')}
-      ${line('ctoMontant', 'Compte-titres', '')}
+      ${line('ctoMontant', 'Compte-titres', 'Valeur actuelle', `<div class="flex items-center justify-end gap-2 mt-2 text-xs text-slate-500">Total versé <input type="number" inputmode="decimal" data-k="ctoVersements" value="${esc(p.ctoVersements ?? '')}" placeholder="€" class="inp-sm w-24 text-right"></div>`)}
     </div>
     ${why('Les règles diffèrent selon l\'enveloppe : seuls les livrets comptent pour l\'épargne de précaution ; l\'âge du PEA (5 ans) et de l\'assurance-vie (8 ans) change leur fiscalité.')}`);
 }
@@ -1196,7 +1290,7 @@ function mergeCredit(list, c) {
   else list.push({ ...c });
 }
 function initCredits() {
-  const det = E.detectCredits(S.raw.map(t => E.categorize(t))).map(c => ({ ...c, crd: '', taux: '', fin: '', assurance: '' }));
+  const det = E.detectCredits(S.raw.map(t => E.categorize(t, { overrides: S.overrides }))).map(c => ({ ...c, crd: '', taux: '', fin: '', assurance: '' }));
   S.credits = det; S.docCredits.forEach(c => mergeCredit(S.credits, c)); S.creditsInit = true;
 }
 function renderCredits() {
@@ -1242,6 +1336,9 @@ function bindWizard() {
   v.querySelectorAll('[data-ext]').forEach(el => el.addEventListener('change', () => { const e = S.profile.externes[+el.dataset.ext]; e[el.dataset.f] = el.type === 'number' ? +el.value || 0 : el.value; }));
   v.querySelectorAll('[data-extdel]').forEach(b => b.onclick = () => { S.profile.externes.splice(+b.dataset.extdel, 1); renderWizard(); });
   v.querySelectorAll('[data-deldoc]').forEach(b => b.onclick = () => removeDoc(+b.dataset.deldoc));
+  v.querySelectorAll('[data-ovr]').forEach(el => el.onchange = () => { const k = el.dataset.ovr; if (el.value) S.overrides[k] = el.value; else delete S.overrides[k]; if (el.value === 'coloc' && !isColoc()) { S.profile.profilType = 'colocation'; S.profile.adultes = 1; toast('Colocation activée : vous préciserez le partage plus loin.'); } });
+  v.querySelectorAll('[data-reclass]').forEach(el => el.onchange = () => { if (el.value) reclassify(+el.dataset.reclass, el.value); });
+  v.querySelectorAll('[data-pltype]').forEach(el => el.onchange = () => { S.placements[el.dataset.pltype].type = el.value; applyPlacements(); renderWizard(); });
   v.querySelectorAll('[data-cr]').forEach(el => el.addEventListener('change', () => { const c = S.credits[+el.dataset.cr], k = el.dataset.f; c[k] = el.type === 'number' ? (el.value === '' ? '' : +el.value) : el.value; if (k === 'type') renderWizard(); }));
   v.querySelectorAll('[data-crsur]').forEach(el => el.onchange = () => { S.credits[+el.dataset.crsur].surReleves = el.checked; renderWizard(); });
   v.querySelectorAll('[data-crdel]').forEach(b => b.onclick = () => { S.credits.splice(+b.dataset.crdel, 1); renderWizard(); });
@@ -1298,55 +1395,102 @@ async function pdfToRows(file) {
     pr.sort((a, b) => b.y - a.y).forEach(r => { r.items.sort((a, b) => a.x - b.x); rows.push({ text: r.items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim(), items: r.items }); });
   }
   S.pdfDebug = { name: file.name, text: rows.map(r => r.text).join('\n').slice(0, 8000) };
-  if (rows.map(r => r.text).join('').replace(/\s/g, '').length < 30) throw new Error('ce PDF ne contient pas de texte (scan ou photo)');
+  if (rows.map(r => r.text).join('').replace(/\s/g, '').length < 30) throw new Error(/paie|salaire|bulletin|\d{2}[._-]\d{2}/i.test(file.name) ? 'document scanné (image), illisible. Si c\'est une fiche de paie, pas d\'inquiétude : votre salaire est déjà lu sur vos relevés bancaires.' : 'document scanné (image) : pas de texte à lire. Saisissez l\'information à la main dans les étapes suivantes.');
   return rows;
 }
 async function readText(f) {
   const buf = await f.arrayBuffer(), utf = new TextDecoder('utf-8').decode(buf);
   return utf.includes(String.fromCharCode(0xFFFD)) ? new TextDecoder('windows-1252').decode(buf) : utf;
 }
-function addTx(list) {
+function addTx(list, uid) {
   const key = t => +t.date + '|' + t.label + '|' + t.amount, seen = new Set(S.raw.map(key));
-  const fresh = list.filter(t => !seen.has(key(t))); S.raw.push(...fresh.map(t => ({ ...t, docId: S.docs.length }))); return { added: fresh.length, skipped: list.length - fresh.length };
+  const fresh = list.filter(t => !seen.has(key(t))); S.raw.push(...fresh.map(t => ({ ...t, docId: S.docs.length, docUid: uid }))); return { added: fresh.length, skipped: list.length - fresh.length };
 }
-const SAV_FIELD = { livretA: 'livretA', ldds: 'ldds', lep: 'lep', livretsAutres: 'livretsAutres', pea: 'peaValeur', av: 'avMontant', per: 'perMontant' };
-const SAV_LABEL = { livretA: 'Livret A', ldds: 'LDDS', lep: 'LEP', livretsAutres: 'Livret', pea: 'PEA', av: 'Assurance-vie', per: 'PER' };
+const SAV_FIELD = { livretA: 'livretA', ldds: 'ldds', lep: 'lep', livretsAutres: 'livretsAutres', pea: 'peaValeur', av: 'avMontant', per: 'perMontant', cto: 'ctoMontant' };
+const SAV_LABEL = { livretA: 'Livret A', ldds: 'LDDS', lep: 'LEP', livretsAutres: 'Livret', pea: 'PEA', av: 'Assurance-vie', per: 'PER', cto: 'Compte-titres' };
 const docMsg = (t, tone = 'slate') => { const m = $('#docMsg'); if (m) m.innerHTML = `<span class="text-${tone}-700">${t}</span>`; };
+const DOC_TEXT = new Map(); // texte lu des PDF, gardé en mémoire seulement (jamais enregistré)
+let docSeq = 0;
+// Lit un PDF avec le lecteur correspondant au type (reconnu ou choisi par l'utilisateur)
+function applyPdf(doc, kind, rows, lines, sub) {
+  doc.kind = kind; doc.ok = true; doc.warnings = []; doc.choisi = !!sub || doc.choisi;
+  if (kind === 'avis') { const r = E.parseAvisImposition(lines); if (r.rfr) S.profile.rfr = r.rfr; if (r.parts) S.profile.parts = r.parts; doc.ok = !!r.rfr; doc.detail = r.rfr ? `Avis d'impôt : RFR ${r.rfr.toLocaleString('fr-FR')} €, ${r.parts ?? '?'} part(s)` : 'Avis d\'impôt : revenu fiscal de référence introuvable'; }
+  else if (kind === 'paie') { const r = E.parseFichePaie(lines); doc.net = r.net; doc.ok = !!r.net; doc.detail = r.net ? `Fiche de paie : net versé ${eur(r.net, 2)}` : 'Fiche de paie : « net payé » introuvable'; S.applied = false; }
+  else if (kind === 'credit') {
+    const c = E.parseCreditDoc(lines);
+    const item = { type: c.type, organisme: '', mensualite: c.mensualite ? Math.round(c.mensualite * 100) / 100 : '', crd: c.crd ?? '', taux: c.taux ?? '', fin: c.fin ? c.fin.toISOString().slice(0, 7) : '', assurance: c.assurance ?? '', source: 'document', surReleves: false, docName: doc.name };
+    S.docCredits.push(item); if (S.creditsInit) mergeCredit(S.credits, item);
+    const bits = [item.mensualite && `${eur(+item.mensualite, 0)}/mois`, item.crd !== '' && `reste ${eur(+item.crd, 0)}`, item.taux !== '' && `${item.taux} %`, item.fin && `fin ${item.fin.split('-').reverse().join('/')}`].filter(Boolean);
+    doc.ok = bits.length > 0; doc.detail = `${E.CREDIT_TYPES[c.type]}${bits.length ? ' : ' + bits.join(' · ') : ' : aucune donnée lue, à compléter à l\'étape « Vos crédits »'}`;
+  }
+  else if (kind === 'epargne') {
+    const r = E.parseSavingsStatement(lines), type = sub || r.type;
+    if (r.solde != null) S.profile[SAV_FIELD[type]] = r.solde;
+    doc.ok = r.solde != null; doc.detail = r.solde != null ? `${SAV_LABEL[type]} : ${eur(r.solde, 0)}` : `${SAV_LABEL[type]} : solde introuvable, saisissez-le à l'étape « Épargne »`;
+  }
+  else {
+    const r = E.parseStatementRows(rows, doc.name), { added, skipped } = addTx(r.transactions, doc.uid);
+    if (added + skipped === 0 && !sub) { doc.kind = 'inconnu'; doc.ok = false; doc.detail = 'Document non reconnu : dites-nous ce que c\'est'; return; }
+    doc.ok = added + skipped > 0; doc.detail = `Relevé : ${added} opérations${skipped ? ` · ${skipped} déjà importées` : ''}`; doc.warnings = r.warnings;
+  }
+}
+const PLACEMENT_TYPES = [['pea', 'PEA'], ['cto', 'Compte-titres'], ['av', 'Assurance-vie'], ['per', 'PER']];
+function applyPlacements() {
+  const F = { pea: ['peaValeur', 'peaVersements'], cto: ['ctoMontant', 'ctoVersements'], av: ['avMontant', 'avVersements'], per: ['perMontant', 'perVersements'] }, acc = {};
+  for (const [, pl] of Object.entries(S.placements)) if (pl.type) {
+    const a = acc[pl.type] = acc[pl.type] || { v: null, ve: null };
+    if (pl.valeur != null) a.v = (a.v || 0) + pl.valeur; if (pl.versements != null) a.ve = (a.ve || 0) + pl.versements - (pl.retraits || 0);
+  }
+  for (const [t, a] of Object.entries(acc)) { if (a.v != null) S.profile[F[t][0]] = Math.round(a.v); if (a.ve != null) S.profile[F[t][1]] = Math.round(a.ve); }
+}
 async function handleFiles(files) {
   for (const f of files) {
     docMsg(`⏳ Lecture de ${esc(f.name)}…`, 'blue');
-    const doc = { name: f.name, ok: true, warnings: [] };
+    const doc = { name: f.name, ok: true, warnings: [], uid: ++docSeq };
     try {
       if (/\.(jpe?g|png|heic|webp)$/i.test(f.name)) throw new Error('une photo ne peut pas être lue : téléchargez le PDF depuis l\'appli de la banque');
       if (/\.(ofx|qfx)$/i.test(f.name)) {
-        const r = E.parseOFX(await readText(f), f.name), { added, skipped } = addTx(r.transactions), sav = r.accounts.filter(a => a.savings && a.solde != null);
+        const r = E.parseOFX(await readText(f), f.name), { added, skipped } = addTx(r.transactions, doc.uid), sav = r.accounts.filter(a => a.savings && a.solde != null);
         sav.forEach(a => S.profile[SAV_FIELD[a.type]] = a.solde);
         Object.assign(doc, { kind: added ? 'releve' : 'epargne', detail: [added ? `${added} opérations` : '', skipped ? `${skipped} déjà importées` : '', ...sav.map(a => `${SAV_LABEL[a.type]} : ${eur(a.solde, 0)}`)].filter(Boolean).join(' · ') || 'Fichier vide', warnings: r.warnings });
       } else if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
-        const rows = await pdfToRows(f), lines = rows.map(r => r.text), kind = E.classifyPdf(lines);
-        if (kind === 'avis') { const r = E.parseAvisImposition(lines); if (r.rfr) S.profile.rfr = r.rfr; if (r.parts) S.profile.parts = r.parts; Object.assign(doc, { kind, ok: !!r.rfr, detail: r.rfr ? `Avis d'impôt : RFR ${r.rfr.toLocaleString('fr-FR')} €, ${r.parts ?? '?'} part(s)` : 'Avis reconnu, mais RFR introuvable' }); }
-        else if (kind === 'paie') { const r = E.parseFichePaie(lines); Object.assign(doc, { kind, ok: !!r.net, net: r.net, detail: r.net ? `Fiche de paie : net versé ${eur(r.net, 2)}` : 'Fiche de paie reconnue, mais net introuvable' }); S.applied = false; }
-        else if (kind === 'credit') {
-          const c = E.parseCreditDoc(lines);
-          const item = { type: c.type, organisme: '', mensualite: c.mensualite ? Math.round(c.mensualite * 100) / 100 : '', crd: c.crd ?? '', taux: c.taux ?? '', fin: c.fin ? c.fin.toISOString().slice(0, 7) : '', assurance: c.assurance ?? '', source: 'document', surReleves: false, docName: f.name };
-          S.docCredits.push(item); if (S.creditsInit) mergeCredit(S.credits, item);
-          const bits = [item.mensualite && `${eur(+item.mensualite, 0)}/mois`, item.crd !== '' && `reste ${eur(+item.crd, 0)}`, item.taux !== '' && `${item.taux} %`, item.fin && `fin ${item.fin.split('-').reverse().join('/')}`].filter(Boolean);
-          Object.assign(doc, { kind, ok: true, detail: `${E.CREDIT_TYPES[c.type]}${bits.length ? ' : ' + bits.join(' · ') : ' — à compléter à la main'}` });
-        }
-        else if (kind === 'epargne') { const r = E.parseSavingsStatement(lines); if (r.solde != null) S.profile[SAV_FIELD[r.type]] = r.solde; Object.assign(doc, { kind, ok: r.solde != null, detail: r.solde != null ? `${SAV_LABEL[r.type]} : solde ${eur(r.solde, 0)}` : `Relevé d'épargne (${SAV_LABEL[r.type]}), solde introuvable` }); }
-        else { const r = E.parseStatementRows(rows, f.name), { added, skipped } = addTx(r.transactions); Object.assign(doc, { kind: 'releve', ok: added + skipped > 0, detail: `Relevé : ${added} opérations${skipped ? ` · ${skipped} déjà importées` : ''}`, warnings: r.warnings }); }
+        const rows = await pdfToRows(f), lines = rows.map(r => r.text);
+        DOC_TEXT.set(doc.uid, { rows, lines }); doc.texte = true;
+        applyPdf(doc, E.classifyPdf(lines), rows, lines);
       } else {
-        const r = E.parseCSV(await readText(f), f.name), { added, skipped } = addTx(r.transactions);
-        Object.assign(doc, { kind: 'releve', ok: added + skipped > 0, detail: `Relevé : ${added} opérations${skipped ? ` · ${skipped} déjà importées` : ''}`, warnings: r.warnings });
+        const text = await readText(f), br = E.parseBrokerCSV(text, f.name);
+        if (br) {
+          const pl = S.placements[br.compte] = S.placements[br.compte] || { type: '', valeur: null, versements: null, retraits: null };
+          if (br.valeur != null) pl.valeur = br.valeur; if (br.versements != null) { pl.versements = br.versements; pl.retraits = br.retraits; }
+          applyPlacements();
+          Object.assign(doc, { kind: 'placement', compte: br.compte, ok: br.kind !== 'ordres' ? (br.valeur != null || br.versements != null) : true,
+            detail: br.kind === 'positions' ? (br.valeur != null ? `Positions du compte ${br.compte} : valeur ${eur(br.valeur, 0)}` : `Positions du compte ${br.compte} : valeur introuvable`)
+              : br.kind === 'historique' ? (br.versements != null ? `Historique du compte ${br.compte} : ${eur(br.versements, 0)} versés${br.retraits ? `, ${eur(br.retraits, 0)} retirés` : ''}` : `Historique du compte ${br.compte} : versements introuvables`)
+              : `Ordres du compte ${br.compte} : pas nécessaires pour l'audit (ignorés)` });
+        } else {
+          const r = E.parseCSV(text, f.name);
+          if (r.epargne) {
+            if (r.epargne.solde != null) S.profile[SAV_FIELD[r.epargne.type]] = r.epargne.solde;
+            Object.assign(doc, { kind: 'epargne', ok: r.epargne.solde != null, detail: r.epargne.solde != null ? `${SAV_LABEL[r.epargne.type]} : solde ${eur(r.epargne.solde, 0)}` : `${SAV_LABEL[r.epargne.type]} : solde introuvable, saisissez-le à l'étape « Épargne »` });
+            S.docs.push(doc); S.applied = false; continue;
+          }
+          const { added, skipped } = addTx(r.transactions, doc.uid);
+          Object.assign(doc, { kind: added + skipped ? 'releve' : 'inconnu', ok: added + skipped > 0, detail: added + skipped ? `Relevé : ${added} opérations${skipped ? ` · ${skipped} déjà importées` : ''}` : 'Fichier non reconnu (ni relevé, ni export de placement)', warnings: added + skipped ? r.warnings : [] });
+        }
       }
     } catch (e) { Object.assign(doc, { kind: 'erreur', ok: false, detail: 'Illisible : ' + esc(e.message) }); }
     S.docs.push(doc); S.applied = false;
   }
   renderWizard();
-  const last = S.docs[S.docs.length - 1]; if (last) docMsg(last.ok ? '✅ Document(s) ajouté(s).' : '⚠️ ' + last.detail, last.ok ? 'emerald' : 'red');
+  const last = S.docs[S.docs.length - 1]; if (last) docMsg(last.ok ? '✅ Document(s) ajouté(s).' : last.kind === 'inconnu' ? '❓ Un document n\'a pas été reconnu : choisissez son type ci-dessous.' : '⚠️ ' + last.detail, last.ok ? 'emerald' : last.kind === 'inconnu' ? 'amber' : 'red');
+}
+function reclassify(i, val) {
+  const doc = S.docs[i], t = DOC_TEXT.get(doc.uid); if (!t) return toast('Rechargez ce document pour le relire.', 'amber');
+  S.raw = S.raw.filter(x => x.docUid !== doc.uid);
+  const [kind, sub] = val.split(':'); applyPdf(doc, kind, t.rows, t.lines, sub || 'choisi'); renderWizard();
 }
 function removeDoc(i) {
-  S.raw = S.raw.filter(t => t.docId !== i).map(t => ({ ...t, docId: t.docId > i ? t.docId - 1 : t.docId }));
+  const d = S.docs[i]; S.raw = S.raw.filter(t => d.uid ? t.docUid !== d.uid : t.docId !== i); DOC_TEXT.delete(d.uid);
   S.docs.splice(i, 1); S.applied = false; renderWizard();
 }
 
