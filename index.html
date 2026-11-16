@@ -112,7 +112,7 @@
 <div id="modal-root"></div>
 <div id="print-report"></div>
 <footer class="no-print max-w-5xl mx-auto px-4 pb-24 text-[11px] text-slate-400">
-  <b>Version du 16/11 11:30</b> · Outil pédagogique d'aide à la réflexion : ne constitue pas un conseil en investissement personnalisé (CIF) ni un conseil fiscal. Lecture PDF : pdf.js (Mozilla, licence Apache 2.0).
+  <b>Version du 16/11 16:00</b> · Outil pédagogique d'aide à la réflexion : ne constitue pas un conseil en investissement personnalisé (CIF) ni un conseil fiscal. Lecture PDF : pdf.js (Mozilla, licence Apache 2.0).
 </footer>
 
 <script id="engine">
@@ -140,7 +140,7 @@ const CONFIG = {
 
 /* ---------- Utils ---------- */
 const stripAccents = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
-const normText = s => ' ' + stripAccents(s).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim() + ' ';
+const normText = s => ' ' + stripAccents(s).toUpperCase().replace(/([A-Z])(?=\d)|(\d)(?=[A-Z])/g, '$1$2 ').replace(/[^A-Z0-9]+/g, ' ').trim() + ' ';
 const DAY = 86400000;
 const round2 = v => Math.round(v * 100) / 100;
 const median = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -184,7 +184,7 @@ const RULES = [
   { cat: 'frais_optimisable', label: 'Frais bancaires (offre/carte)', grp: 'frais', kw: ['COTISATION CARTE', 'COTIS CARTE', 'COTISATION OFFRE', 'FRAIS TENUE', 'TENUE DE COMPTE', 'FRAIS TENUE DE COMPTE', 'COTISATION FORMULE', 'OFFRE GROUPEE', 'FRAIS BANCAIRES', 'ASSURANCE MOYENS DE PAIEMENT'] },
   { cat: 'epargne', label: 'Épargne / virements internes', grp: 'epargne', kw: ['LIVRET A', 'LIVRET', 'LDDS', 'LEP', 'EPARGNE', 'ASSURANCE VIE', 'VIR INTERNE', 'VIREMENT INTERNE', 'PEA', 'PER '] },
   { cat: 'logement', label: 'Logement', grp: 'contrainte', kw: ['LOYER', 'FONCIA', 'NEXITY', 'CITYA', 'ORPI GESTION', 'SYNDIC', 'CHARGES COPRO', 'AQUITANIS', 'DOMOFRANCE', 'OPH'] },
-  { cat: 'credit', label: 'Crédits', grp: 'contrainte', kw: ['ECHEANCE PRET', 'ECH PRET', 'ECHEANCE CREDIT', 'ECH CREDIT', 'PRET IMMO', 'PRET PERSO', 'PRET PERSONNEL', 'PRET AUTO', 'PRET ETUDIANT', 'CREDIT IMMO', 'CREDIT AUTO', 'CREDIT RENOUVELABLE', 'REMBOURSEMENT PRET', 'DIAC', 'RCI BANQUE', 'MOBILIZE', 'STELLANTIS FINANCE', 'CREDIPAR', 'PSA BANQUE', 'TOYOTA FINANCE', 'VOLKSWAGEN BANK', 'VW BANK', 'BMW FINANCE', 'MERCEDES BENZ FINANCIAL', 'COFIDIS', 'CETELEM', 'SOFINCO', 'FRANFINANCE', 'ONEY', 'FLOA', 'CA CONSUMER', 'YOUNITED'] },
+  { cat: 'credit', label: 'Crédits', grp: 'contrainte', kw: ['ECHEANCE PRET', 'ECH PRET', 'ECHEANCE CREDIT', 'ECH CREDIT', 'PRET IMMO', 'PRET PERSO', 'PRET PERSONNEL', 'PRET AUTO', 'PRET ETUDIANT', 'CREDIT IMMO', 'CREDIT AUTO', 'CREDIT RENOUVELABLE', 'REMBOURSEMENT PRET', 'DIAC', 'RCI BANQUE', 'MOBILIZE', 'STELLANTIS FINANCE', 'CREDIPAR', 'COMPAGNIE GENERALE DE CREDIT', 'SOFIRA', 'PSA BANQUE', 'TOYOTA FINANCE', 'VOLKSWAGEN BANK', 'VW BANK', 'BMW FINANCE', 'MERCEDES BENZ FINANCIAL', 'COFIDIS', 'CETELEM', 'SOFINCO', 'FRANFINANCE', 'ONEY', 'FLOA', 'CA CONSUMER', 'YOUNITED'] },
   { cat: 'energie', label: 'Énergie & eau', grp: 'contrainte', kw: ['EDF', 'ENGIE', 'TOTALENERGIES ELEC', 'TOTAL ENERGIES ELEC', 'ENI GAS', 'OHM ENERGIE', 'EKWATEUR', 'VATTENFALL', 'MINT ENERGIE', 'SUEZ', 'VEOLIA', 'REGAZ', 'EAU DE'] },
   { cat: 'sante', label: 'Mutuelle santé', grp: 'contrainte', kw: ['MUTUELLE', 'HARMONIE', 'MGEN', 'ALAN', 'MALAKOFF', 'AG2R', 'AESIO', 'VIASANTE', 'APICIL', 'KLESIA', 'SWISSLIFE PREVOYANCE'] },
   { cat: 'assurance', label: 'Assurances', grp: 'contrainte', kw: ['AXA', 'MAIF', 'MACIF', 'MATMUT', 'MAAF', 'MMA', 'GMF', 'ALLIANZ', 'GROUPAMA', 'GENERALI', 'ABEILLE', 'LUKO', 'LOVYS', 'ACHEEL', 'DIRECT ASSURANCE', 'OLIVIER ASSURANCE', 'LEOCARE', 'PACIFICA', 'CARDIF', 'APRIL', 'HISCOX', 'ASSURANCE', 'ASSURANCES'] },
@@ -197,10 +197,12 @@ const RULES = [
   { cat: 'presse', label: 'Presse', grp: 'abonnement', kw: ['LE MONDE', 'LIBERATION', 'FIGARO', 'MEDIAPART', 'CAFEYN', 'SUD OUEST', 'L EQUIPE', 'LEQUIPE'] },
   { cat: 'jeux', label: 'Jeux vidéo', grp: 'abonnement', kw: ['PLAYSTATION', 'PSN', 'XBOX', 'NINTENDO', 'GAME PASS'] },
   { cat: 'telecom', label: 'Télécom & internet', grp: 'contrainte', kw: ['ORANGE', 'SOSH', 'SFR', 'RED BY SFR', 'FREE MOBILE', 'FREE TELECOM', 'FREEBOX', 'FREE', 'BOUYGUES', 'BOUYGUES TELECOM', 'B AND YOU', 'LA POSTE MOBILE', 'PRIXTEL', 'SYMA', 'NRJ MOBILE'] },
-  { cat: 'alimentation', label: 'Alimentation', grp: 'courant', kw: ['CARREFOUR', 'LECLERC', 'E LECLERC', 'AUCHAN', 'LIDL', 'ALDI', 'INTERMARCHE', 'CASINO', 'MONOPRIX', 'FRANPRIX', 'SUPER U', 'HYPER U', 'U EXPRESS', 'BIOCOOP', 'NETTO', 'GRAND FRAIS', 'PICARD', 'COCCINELLE'] },
-  { cat: 'restauration', label: 'Restauration & livraison', grp: 'courant', kw: ['UBER EATS', 'DELIVEROO', 'JUST EAT', 'MCDONALD', 'MCDONALDS', 'BURGER KING', 'KFC', 'RESTAURANT', 'BRASSERIE', 'BOULANGERIE', 'STARBUCKS', 'SUSHI', 'PIZZA'] },
-  { cat: 'transport', label: 'Transport & carburant', grp: 'courant', kw: ['TOTAL', 'TOTALENERGIES', 'ESSO', 'BP', 'SHELL', 'AVIA', 'STATION', 'UBER', 'BOLT', 'BLABLACAR', 'SNCF', 'OUIGO', 'PEAGE', 'AUTOROUTE', 'AUTOROUTES', 'VINCI AUTOROUTES', 'APRR', 'SANEF', 'ASF', 'COFIROUTE', 'ESCOTA', 'SAPN', 'ALIENOR', 'ATMB', 'PARKING', 'INDIGO'] },
-  { cat: 'achats', label: 'Achats divers', grp: 'courant', kw: ['AMAZON', 'AMZN', 'FNAC', 'DARTY', 'CDISCOUNT', 'ZALANDO', 'VINTED', 'IKEA', 'LEROY MERLIN', 'CASTORAMA', 'ACTION', 'PAYPAL', 'DECATHLON', 'APPLE COM'] },
+  { cat: 'alimentation', label: 'Alimentation', grp: 'courant', kw: ['CARREFOUR', 'LECLERC', 'E LECLERC', 'AUCHAN', 'LIDL', 'ALDI', 'INTERMARCHE', 'CASINO', 'MONOPRIX', 'FRANPRIX', 'SUPER U', 'HYPER U', 'U EXPRESS', 'BIOCOOP', 'NETTO', 'GRAND FRAIS', 'PICARD', 'COCCINELLE', 'JOW', 'SPAR', 'MARCHE U', 'PRIMEUR', 'FROMAGERIE', 'BOUCHERIE', 'BIOCOOP', 'NATURALIA', 'CARREFOUR CONTACT', 'CARREFOUR CITY', 'SUPER U', 'UEP'] },
+  { cat: 'restauration', label: 'Restauration & livraison', grp: 'courant', kw: ['UBER EATS', 'DELIVEROO', 'JUST EAT', 'MCDONALD', 'MCDONALDS', 'BURGER KING', 'KFC', 'RESTAURANT', 'BRASSERIE', 'BOULANGERIE', 'STARBUCKS', 'SUSHI', 'PIZZA', 'PIZZ', 'PIZZERIA', 'PUB', 'BAR', 'CAFE', 'CAFES', 'BISTRO', 'BISTROT', 'KEBAB', 'TACOS', 'BURGER', 'TRUCK', 'DEJBOX', 'FOODCHERI', 'CHEZLEBOULANGER', 'PAIN', 'PATISSERIE', 'CREPERIE', 'DISTRI BOISSON', 'SNACK', 'COLUMBUS', 'TOO GOOD TO GO', 'TOOGOODTOGO'] },
+  { cat: 'loisirs', label: 'Loisirs, sorties, voyages', grp: 'courant', kw: ['WEEZEVENT', 'FUNBOOKER', 'BILLETWEB', 'HELLOASSO', 'TICKETMASTER', 'FNAC SPECTACLES', 'CINEMA', 'MEGARAMA', 'UGC', 'PATHE', 'CGR', 'BOOKING', 'AIRBNB', 'HOTEL', 'CAMPING', 'RYANAIR', 'EASYJET', 'VOLOTEA', 'AIR FRANCE', 'TRANSAVIA', 'VLCTRAVEL', 'RESATRAVEL', 'LASER GAME', 'ESCAPE', 'BOWLING', 'PISCINE'] },
+  { cat: 'dons', label: 'Dons & cadeaux', grp: 'courant', kw: ['LEETCHI', 'LYDIA CAGNOTTE', 'CAGNOTTE', 'DON', 'DONS', 'UNICEF', 'CROIX ROUGE', 'RESTOS DU COEUR', 'SECOURS'] },
+  { cat: 'transport', label: 'Transport & carburant', grp: 'courant', kw: ['TOTAL', 'TOTALENERGIES', 'ESSO', 'BP', 'SHELL', 'AVIA', 'STATION', 'UBER', 'BOLT', 'BLABLACAR', 'SNCF', 'OUIGO', 'PEAGE', 'AUTOROUTE', 'AUTOROUTES', 'VINCI AUTOROUTES', 'APRR', 'SANEF', 'ASF', 'COFIROUTE', 'ESCOTA', 'SAPN', 'ALIENOR', 'ATMB', 'PARKING', 'INDIGO', 'ATLANDES', 'EASYPARK', 'ENI', 'ESSOF', 'CERTAS', 'INTERMARCHE CARBURANT', 'LECLERC STATION', 'DYNEFF', 'TBM VENTE', 'TCL VENTE', 'TRAVERSE', 'FLIXBUS', 'BLABLACAR BUS'] },
+  { cat: 'achats', label: 'Achats divers', grp: 'courant', kw: ['AMAZON', 'AMZN', 'FNAC', 'DARTY', 'CDISCOUNT', 'ZALANDO', 'VINTED', 'IKEA', 'LEROY MERLIN', 'CASTORAMA', 'ACTION', 'PAYPAL', 'DECATHLON', 'APPLE COM', 'TRUFFAUT', 'JARDILAND', 'BOULANGER ELECTRO', 'KIABI', 'PRIMARK', 'H M', 'ZARA', 'CELIO', 'JULES', 'SEPHORA', 'NOCIBE', 'MAISONS DU MONDE', 'BRICOMARCHE', 'BRICO DEPOT', 'MR BRICOLAGE', 'GIFI', 'NORAUTO', 'FEU VERT', 'SPEEDY', 'MIDAS', 'STELLANTIS YOU', 'MULTISERVICES', 'TEMU', 'SHEIN', 'ALIEXPRESS', 'WISH', 'RAKUTEN', 'BACK MARKET', 'LDLC', 'BOULANGER COM'] },
   { cat: 'sante_courant', label: 'Santé (soins)', grp: 'courant', kw: ['PHARMACIE', 'DOCTOLIB', 'MEDECIN', 'CABINET MEDICAL', 'CABINET DENTAIRE', 'DENTISTE', 'KINE', 'OSTEOPATHE', 'RADIOLOGIE', 'LABORATOIRE', 'OPTICIEN'] },
   { cat: 'retrait', label: "Retraits d'espèces", grp: 'courant', kw: ['RETRAIT DAB', 'RETRAIT', 'DAB'] }
 ];
@@ -215,7 +217,7 @@ const CREDIT_RULES = [
 const CAT_LABELS = Object.fromEntries([...RULES, ...CREDIT_RULES].map(r => [r.cat, r.label]));
 CAT_LABELS.autre = 'Autres dépenses'; CAT_LABELS.autre_credit = 'Autres crédits';
 CAT_LABELS.provisions = 'Provisions (taxe foncière, copro…)'; CAT_LABELS.interne = 'Virements entre mes comptes'; CAT_LABELS.loisirs = 'Loisirs, sorties, voyages'; CAT_LABELS.dons = 'Dons & cadeaux'; CAT_LABELS.remboursement = 'Remboursements reçus'; CAT_LABELS.carte_total = 'Total carte à débit différé'; CAT_LABELS.indemnites = 'Indemnités & activités annexes'; CAT_LABELS.abo_autre = 'Autres abonnements'; CAT_LABELS.contrainte_autre = 'Autres charges fixes';
-CAT_LABELS.coloc_recu = 'Remboursement coloc (reçu)'; CAT_LABELS.coloc_envoye = 'Remboursement coloc (envoyé)';
+CAT_LABELS.coloc_recu = 'Remboursement coloc (reçu)'; CAT_LABELS.coloc_net = 'Remboursements entre colocs (solde)'; CAT_LABELS.coloc_envoye = 'Remboursement coloc (envoyé)';
 const CAT_GRP = Object.fromEntries(RULES.map(r => [r.cat, r.grp])); CAT_GRP.provisions = 'contrainte'; CAT_GRP.interne = 'interne'; CAT_GRP.abo_autre = 'abonnement'; CAT_GRP.contrainte_autre = 'contrainte';
 const GENERIC_KW = new Set(['ASSURANCE', 'ASSURANCES', 'LOYER', 'TAXE', 'IMPOT', 'IMPOTS', 'MUTUELLE', 'LIVRET', 'EPARGNE', 'RETRAIT', 'DAB', 'STATION', 'RESTAURANT', 'BRASSERIE', 'BOULANGERIE', 'CABINET', 'DR', 'MEDECIN', 'PHARMACIE', 'PARKING', 'EAU DE', 'TRAITEMENT', 'PAIE', 'SALAIRE']);
 
@@ -224,7 +226,40 @@ const NOISE = /\b(PRLV|PRELEVEMENT|SEPA|EUROPEEN|PAIEMENT|PAIEMT|PAR|CARTE|CB|FA
 function cleanLabel(label) { return normText(label).replace(NOISE, ' ').replace(/\s+/g, ' ').trim(); }
 
 // ctx.colocAliases : mots-clés (ex. TRICOUNT, prénom d'un coloc) qui signalent un remboursement entre colocataires
-const opKey = label => cleanLabel(label).split(' ').slice(0, 3).join(' ') || 'INCONNU';
+const KEY_MOTIFS = ['PAYE', 'PAIE', 'SALAIRE', 'POMPIERS', 'VACATIONS', 'LOYER', 'CAUTION', 'TRICOUNT', 'PENSION', 'RETRAITE', 'PRIME'];
+const opKey = label => {
+  const w = cleanLabel(label).split(' ').filter(Boolean), k = w.slice(0, 3);
+  const m = KEY_MOTIFS.find(x => w.includes(x) && !k.includes(x)); if (m) k.push(m);
+  return k.join(' ') || 'INCONNU';
+};
+// Contrepartie d'un virement : ce qui précède le motif (« Virement émis WEB M. DUPONT JEAN - motif »)
+const counterpart = label => normText(String(label || '').split(/ - | \/ /)[0]);
+const CIVIL = / (M|MR|MME|MLLE|MONSIEUR|MADAME|MADEMOISELLE) /;
+// Titulaire(s) du compte (lus dans l'en-tête des exports) : un virement à son propre nom = virement entre ses comptes
+function holderMatch(label, holders) {
+  if (!holders || !holders.length) return null;
+  const c = counterpart(label), w = c.trim().split(' ');
+  for (const h of holders) {
+    const t = h.filter(x => x.length >= 2); if (t.length < 2) continue;
+    const ok = x => w.includes(x) || (x === t[t.length - 1] || x === t[0]) && w.some(y => y.length >= 2 && y.length < x.length && x.startsWith(y) && w.indexOf(y) === w.length - 1);
+    if (t.every(ok)) return 'moi';
+    const nom = t.find(x => x.length >= 3 && w.includes(x));
+    if (nom) { // même nom de famille : soi-même tronqué (« M. DUPONT ») ou un proche (« DUPONT PAUL »)
+      const after = w.slice(w.indexOf(nom) + 1).filter(x => !t.includes(x) && !/^\d/.test(x));
+      if (!after.length && CIVIL.test(c)) return 'moi';
+      if (after.length) return 'famille';
+    }
+  }
+  return null;
+}
+function holdersFrom(lines) { // « M. DUPONT JEAN », « MME DURAND MARIE », « M. ET MME DUPONT »
+  const out = [];
+  for (const l of lines.slice(0, 40)) {
+    const m = normText(l).match(/^ (?:M|MR|MME|MLLE|MONSIEUR|MADAME)(?: (?:ET|OU) (?:M|MR|MME|MLLE))? ([A-Z]{2,}(?: [A-Z]{2,}){1,3}) $/);
+    if (m && !/ (COMPTE|CARTE|SOLDE|LIVRET|EPARGNE|PORTEUR) /.test(' ' + m[1] + ' ')) out.push(m[1].split(' '));
+  }
+  return out;
+}
 // Choix faits par l'utilisateur sur l'écran « à identifier » : ils priment sur tout le reste
 const CARTE_TOTAL = / (DEBIT DIFFERE|DEBIT MENSUEL CARTE|RELEVE CARTE|RELEVE DIFFERE|TOTAL CARTE|OPERATIONS CARTE|ARRETE CARTE|CARTE DIFFEREE?|FACTURE CARTE DIFFEREE?|DEPENSES CARTE|RELEVE MENSUEL CARTE|ENCOURS CARTE) /;
 const OVR = {
@@ -274,9 +309,19 @@ function categorizeBase(tx, ctx = {}) {
   if (o && OVR[o]) return { ...tx, ...OVR[o], merchant: key, manuel: true };
   for (const a of ctx.colocAliases || []) if (a && has(n, a))
     return { ...tx, cat: tx.amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage', merchant: a };
+  const virement = / (VIR|VIREMENT|VIRT|WERO|TRANSFERT|LYDIA|PAYLIB|INST) /.test(n);
+  if (ctx.comptes && ctx.comptes.length) { const own = ctx.comptes.find(c => c.num.length >= 9 && n.includes(' ' + c.num + ' ') && !(tx.ownNum === c.num));
+    if (own && virement) return { ...tx, cat: own.epargne && tx.amount < 0 ? 'epargne' : 'interne', grp: own.epargne && tx.amount < 0 ? 'epargne' : 'interne', merchant: 'MES COMPTES' }; }
+  if (virement) {
+    const hm = holderMatch(tx.label, ctx.holders);
+    if (hm === 'moi') return { ...tx, cat: 'interne', grp: 'interne', merchant: 'MES COMPTES', titulaire: true };
+    if (hm === 'famille') return tx.amount > 0 ? { ...tx, cat: 'remboursement', grp: 'interne', merchant: key, famille: true } : { ...tx, cat: 'dons', grp: 'courant', merchant: key, famille: true };
+    if (/ (CAUTION|DEPOT DE GARANTIE) /.test(n)) return { ...tx, cat: 'interne', grp: 'interne', merchant: key, caution: true };
+    if (/ (TRICOUNT|COLOC|COLOCATION) /.test(n)) return { ...tx, cat: tx.amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage', merchant: key };
+  }
   if (/ (VENTE BOURSE|VENTE EN BOURSE|VENTE COMPTANT|COUPONS?|PAIEMENT DE COUPON|DIVIDENDES?|INTERETS CREDITEURS|INTERETS ANNUELS|REMBOURSEMENT TITRES) /.test(n)) return { ...tx, cat: tx.amount > 0 ? 'interne' : 'epargne', grp: tx.amount > 0 ? 'interne' : 'epargne', merchant: key };
   if (/ (ACHAT BOURSE|ACHAT EN BOURSE|ACHAT COMPTANT|SOUSCRIPTION) /.test(n) && tx.amount < 0) return { ...tx, cat: 'epargne', grp: 'epargne', merchant: key };
-  if (tx.amount > 0 && / (PAYPAL|REMBOURSEMENT|AVOIR|REMISE|ANNULATION|RETOUR) /.test(n) && !/ (SALAIRE|PAIE|PAYE|PENSION|CAF) /.test(n)) return { ...tx, cat: 'remboursement', grp: 'interne', merchant: key };
+  if (tx.amount > 0 && / (PAYPAL|REMBOURSEMENT|AVOIR|REMISE|ANNULATION|RETOUR|DGFIP|IMPOTS?|FINANCES PUBLIQUES|TRESOR PUBLIC) /.test(n) && !/ (SALAIRE|PAIE|PAYE|PENSION|CAF) /.test(n)) return { ...tx, cat: 'remboursement', grp: 'interne', merchant: key };
   if (/ (CPTE A CPTE|COMPTE A COMPTE|VIR(EMENT)? INTERNE|DE VOTRE COMPTE|VERS VOTRE COMPTE|ENTRE VOS COMPTES) /.test(n) || / EN VOTRE FAVEUR DU \d{5,} /.test(n) || / EMIS VERS \d{5,} /.test(n)) return { ...tx, cat: 'interne', grp: 'interne', merchant: key };
   if (tx.amount < 0 && !tx.encours && CARTE_TOTAL.test(n)) return { ...tx, cat: 'carte_total', grp: ctx.cardDetail ? 'interne' : 'courant', merchant: 'TOTAL CARTE' };
   const rules = tx.amount > 0 ? CREDIT_RULES.map(r => ({ ...r, grp: r.cat === 'epargne' ? 'epargne' : 'revenu' })) : RULES;
@@ -377,6 +422,8 @@ function parseCSV(text, source = 'csv') {
   const encours = / (ENCOURS CARTE|ENCOURS DE CARTE|ENCOURS|DEBIT DIFFERE|CARTE A DEBIT DIFFERE|CARTE DIFFEREE?|RELEVE DE CARTE|RELEVE CARTE) /.test(hw) && !epargne && !/ COMPTE (DE DEPOT|COURANT|CHEQUES?) | VIREMENT EN VOTRE FAVEUR /.test(hw);
   const sm = pre.match(/solde[^\n]*?(-?\d{1,3}(?:[ .\u00a0\u202f]\d{3})*,\d{2})/i);
   const solde = sm ? parseAmount(sm[1]) : null;
+  const holders = holdersFrom(rows.slice(0, Math.max(0, start)).map(r => r.join(' ')));
+  const comptes = [...new Set([...(pre + ' ' + source).matchAll(/(?:n[°º]|compte|carte)\D{0,25}?(\d{9,12})\b/gi)].map(m => m[1]))].map(num => ({ num, epargne: epargne || / PEA | TITRES | LIVRET /.test(hw) }));
   const transactions = [];
   for (const r of rows.slice(start)) {
     const date = parseDate(r[map.date]); if (!date) continue;
@@ -394,7 +441,7 @@ function parseCSV(text, source = 'csv') {
   const toutPositif = transactions.length > 0 && transactions.every(t => t.amount > 0);
   const vraiEncours = encours && !transactions.some(t => / (EN VOTRE FAVEUR|VIR(EMENT)? RECU|SALAIRE|PAYE) /.test(normText(t.label)));
   if (vraiEncours) transactions.forEach(t => { if (toutPositif && !/ (REMBOURSEMENT|AVOIR|REMISE|ANNULATION) /.test(normText(t.label))) t.amount = -Math.abs(t.amount); t.encours = true; });
-  return { transactions, warnings, epargne: epargne ? { type: savingsType(pre + ' ' + source) , solde } : null, solde, encours: vraiEncours };
+  return { transactions, warnings, epargne: epargne ? { type: savingsType(pre + ' ' + source) , solde } : null, solde, encours: vraiEncours, holders, comptes };
 }
 
 /* ---------- Exports de courtier (PEA / compte-titres) : POSITIONS, HISTORY, ORDERS… ---------- */
@@ -478,7 +525,12 @@ function parseAvisImposition(text) {
   const rfr = findLabeled(L, [{ inc: 'REVENUFISCALDEREFERENCE' }], { min: 0, max: 5e6, ints: true }) || findLabeled(L, [{ inc: 'REVENUFISCALDEREFERENCE' }], { max: 5e6 });
   const partsL = findLabeled(L, [{ inc: 'NOMBREDEPARTS' }, { inc: 'NBDEPARTS' }, { inc: 'NBREDEPARTS' }, { inc: 'NOMBREDEPART' }, { inc: 'QUOTIENTFAMILIAL', exc: ['PLAFON'] }], { min: 0.5, max: 20 });
   const partsI = partsL ? null : (L.join(' ').match(/(?:nombre|nb|nbre) de parts?\D{0,40}?(\d{1,2}(?:[,.]\d{1,2})?)(?!\d)/i) || [])[1];
-  return { rfr: rfr && rfr.value, parts: partsL ? partsL.value : partsI ? parseAmount(partsI) : null, ligne: rfr && rfr.ligne };
+  let parts = partsL ? partsL.value : partsI ? parseAmount(partsI) : null;
+  if (parts == null && rfr) { // mise en page en colonnes : le nombre de parts (« 1,00 ») est la ligne isolée juste sous le RFR
+    const v = String(Math.round(rfr.value)), i = L.findIndex(l => l.replace(/[\s.\u00a0\u202f]/g, '').endsWith(v) && /^\s*[\d\s.\u00a0\u202f]+$/.test(l));
+    for (let j = i + 1; i >= 0 && j <= i + 3 && j < L.length; j++) { const m = L[j].match(/^\s*(\d{1,2}[,.]\d{2})\s*$/); if (m) { const x = parseAmount(m[1]); if (x >= 1 && x <= 10 && x * 4 === Math.round(x * 4)) { parts = x; break; } } }
+  }
+  return { rfr: rfr && rfr.value, parts, ligne: rfr && rfr.ligne };
 }
 function parseFichePaie(text) {
   const L = toLines(text), o = { min: 50, max: 100000 };
@@ -486,6 +538,11 @@ function parseFichePaie(text) {
   const avant = findLabeled(L, [{ inc: 'NETAPAYERAVANTIMPOT' }, { inc: 'NETAPAYERAVANTPRELEVEMENT' }, { inc: 'NETAVANTIMPOT' }], o);
   const social = findLabeled(L, [{ inc: 'MONTANTNETSOCIAL' }], o);
   const imposable = findLabeled(L, [{ inc: 'NETIMPOSABLE', exc: ['CUMUL'] }], o);
+  // lecture d'un scan : un chiffre en trop (« 20852,18 » pour 2 052,18) se repère grâce au net avant impôt
+  const fix = (v, ref) => { if (!v || !ref || v <= ref * 1.05) return v; const t = String(Math.round(v * 100));
+    for (let i = 0; i < t.length - 2; i++) { const w = +(t.slice(0, i) + t.slice(i + 1)) / 100; if (w <= ref * 1.02 && w >= ref * 0.7) return w; } return ref; };
+  if (verse && avant) verse.value = fix(verse.value, avant.value);
+  if (imposable && avant && (imposable.value < avant.value * 0.5 || imposable.value > avant.value * 1.5)) imposable.value = null;
   return { net: verse ? verse.value : avant && avant.value, netAvantImpot: avant && avant.value, netSocial: social && social.value, netImposable: imposable && imposable.value, ligne: (verse || avant || {}).ligne };
 }
 
@@ -576,7 +633,7 @@ function classifyPdf(lines) {
   if (all.includes('REVENUFISCALDEREFERENCE')) return 'avis';
   if (/BULLETIN|NETAPAY|NETAPAV|NETPAY|NETPAV|NETAVERSER|SALAIREDEBASE|NETSOCIAL|NETIMPOSABLE|COTISATIONSSALARIALES|SECURITESOCIALE/.test(all) && !/RELEVEDECOMPTE|RELEVEDESOPERATIONS/.test(head)) return 'paie';
   if (/ENCOURS|DEBITDIFFERE|CARTEDIFFERE|OPERATIONSCARTE|RELEVEDESOPERATIONSCARTE/.test(head) && !/RELEVEDECOMPTE/.test(head)) return 'encours';
-  const credSig = ['TABLEAUDAMORTISSEMENT', 'ECHEANCIER', 'OFFREDEPRET', 'OFFREDECREDIT', 'CAPITALRESTANTDU', 'CREDITRENOUVELABLE', 'TAUXANNUELEFFECTIFGLOBAL', 'TAEG', 'MONTANTDUPRET', 'MONTANTDUCREDIT', 'CONTRATDECREDIT', 'ASSURANCEEMPRUNTEUR', 'AMORTISSEMENT'].filter(k => all.includes(k)).length;
+  const credSig = ['TABLEAUDAMORTISSEMENT', 'ECHEANCIER', 'OFFREDEPRET', 'OFFREDECREDIT', 'CAPITALRESTANTDU', 'CREDITRENOUVELABLE', 'TAUXANNUELEFFECTIFGLOBAL', 'TAEG', 'MONTANTDUPRET', 'MONTANTDUCREDIT', 'CONTRATDECREDIT', 'ASSURANCEEMPRUNTEUR', 'AMORTISSEMENT', 'CAPITALAMORTI', 'DONTINTERETS', 'CONDITIONSDEREMBOURSEMENT', 'MONTANTTOTALDUCREDIT', 'TAUXDEBITEUR', 'NUMERODUCONTRAT', 'NDUCONTRAT', 'DIEMPRUNTEUR', 'NOUVEAUPRELEVEMENT', 'CREDIPAR', 'DIAC', 'COFIDIS', 'CETELEM', 'SOFINCO', 'FRANFINANCE', 'CACONSUMER', 'MOBILIZE', 'YOUNITED'].filter(k => all.includes(k)).length;
   if (credSig >= 2 && !/RELEVEDECOMPTECOURANT|COMPTECOURANT|COMPTEDEDEPOT/.test(head)) return 'credit';
   if (/LIVRETA|LIVRETBLEU|LDDS|DEVELOPPEMENTDURABLE|LIVRETDEPARGNEPOPULAIRE|COMPTEEPARGNE|PLANDEPARGNEENACTIONS|ASSURANCEVIE|LIVRETJEUNE|PLANDEPARGNELOGEMENT/.test(head) && !/COMPTECOURANT|COMPTEDEDEPOT|COMPTECHEQUE/.test(head)) return 'epargne';
   return 'releve';
@@ -600,11 +657,17 @@ function coverage(txs) {
 /* ---------- Ce que l'on peut deviner à partir des relevés ---------- */
 const COLOC_HINTS = ['TRICOUNT'];
 function infer(rawTxs, ctx = {}) {
-  const txs = markInternalPairs(rawTxs.map(t => categorize(t, ctx))), nb = months(txs), I = {};
-  const sal = txs.filter(t => t.amount > 0 && t.cat === 'salaire');
+  const txs = classifyAll(rawTxs, ctx), nb = months(txs), I = {};
+  const finD = txs.length ? Math.max(...txs.map(t => +t.date)) : 0;
+  const salAll = txs.filter(t => t.amount > 0 && t.cat === 'salaire');
+  // changement d'employeur : seul le salaire actuel compte (l'ancien s'est arrêté)
+  const emp = {}; salAll.forEach(t => (emp[opKey(t.label)] = emp[opKey(t.label)] || []).push(t));
+  const actifs = Object.entries(emp).filter(([, l]) => finD - Math.max(...l.map(t => +t.date)) <= 45 * DAY);
+  const sal = actifs.length ? actifs.flatMap(([, l]) => l) : salAll;
+  if (actifs.length && actifs.length < Object.keys(emp).length) I.ancienSalaire = Object.entries(emp).filter(([k]) => !actifs.some(a => a[0] === k)).map(([k, l]) => ({ nom: k, montant: round2(median(l.map(t => t.amount))), fin: new Date(Math.max(...l.map(t => +t.date))) }));
   if (sal.length) {
     const byM = {}; sal.forEach(t => byM[monthKey(t.date)] = (byM[monthKey(t.date)] || 0) + t.amount);
-    const vals = Object.values(byM); I.salaire = round2(median(vals)); I.salaireJour = Math.round(median(sal.map(t => t.date.getUTCDate())));
+    const vals = Object.keys(byM).sort().slice(-6).map(k => byM[k]); I.salaire = round2(median(vals.slice(-3))); I.salaireJour = Math.round(median(sal.map(t => t.date.getUTCDate())));
     I.employeur = cleanLabel(sal[sal.length - 1].label).replace(/\b(SALAIRE|PAIE|TRAITEMENT|REMUNERATION|ACOMPTE)\b/g, '').trim().split(' ').slice(0, 3).join(' ');
     const n = normText(sal.map(t => t.label).join(' '));
     if (/ (TRAITEMENT|DRFIP|DGFIP|PAIERIE|TRESORERIE|DDFIP) /.test(n)) I.employeurPublic = true;
@@ -624,19 +687,22 @@ function infer(rawTxs, ctx = {}) {
     const split = [];
     for (const [k, x] of reg) {
       const mx = Math.max(...x.l.map(t => t.amount)), gros = x.l.filter(t => t.amount >= Math.max(800, mx * 0.5)), petits = x.l.filter(t => !gros.includes(t));
-      if (gros.length >= 3 && petits.length >= 2) { split.push([k + ' (gros versements)', { ...x, l: gros }]); split.push([k, { ...x, l: petits }]); }
+      const grosFin = gros.length ? Math.max(...gros.map(t => +t.date)) : 0, petitsFin = petits.length ? Math.max(...petits.map(t => +t.date)) : 0;
+      if (gros.length >= 3 && petits.length >= 2 && fin - grosFin > 62 * DAY && petitsFin > grosFin) { split.push([k + ' (gros versements)', { ...x, l: gros }]); split.push([k, { ...x, l: petits }]); }
       else split.push([k, x]);
     }
     I.autresRevenusDetail = split.map(([k, x]) => {
       const ds = x.l.map(t => +t.date), last = Math.max(...ds), first = Math.min(...ds);
       const mois = Math.max(1, Math.round((Math.min(fin, last + 30 * DAY) - first) / DAY / 30.44)); // moyenne sur la période où la source existe
-      return { nom: k, cat: x.cat, moyenne: round2(x.l.reduce((s, t) => s + t.amount, 0) / Math.max(mois, Math.min(nb, 3))), n: x.l.length, debut: new Date(first), fin: new Date(last), arretee: fin - last > 45 * DAY };
+      const recents = [...x.l].sort((a, b) => a.date - b.date).slice(-3).map(t => t.amount);
+      const moy = x.cat === 'prestations' ? median(recents) : x.l.reduce((s, t) => s + t.amount, 0) / Math.max(mois, Math.min(nb, 3)); // une aide CAF : son montant actuel ; des indemnités variables : leur moyenne
+      return { nom: k, cat: x.cat, moyenne: round2(moy), min: Math.min(...x.l.map(t => t.amount)), max: Math.max(...x.l.map(t => t.amount)), n: x.l.length, debut: new Date(first), fin: new Date(last), arretee: fin - last > 62 * DAY };
     }).sort((a, b) => b.moyenne - a.moyenne);
     I.autresRevenus = round2(I.autresRevenusDetail.filter(x => !x.arretee).reduce((s, x) => s + x.moyenne, 0));
   }
   const hits = {}; for (const t of txs) for (const h of COLOC_HINTS) if (has(normText(t.label), h)) hits[h] = (hits[h] || 0) + 1;
   const best = Object.entries(hits).sort((a, b) => b[1] - a[1])[0];
-  if (best && best[1] >= Math.max(3, nb)) I.coloc = { alias: best[0], nb: best[1] };
+  if (best && best[1] >= 2) I.coloc = { alias: best[0], nb: best[1] };
   if (txs.some(t => ['garde'].includes(t.cat)) || txs.some(t => t.amount > 0 && / CAF /.test(normText(t.label)))) I.enfantsProbables = true;
   if (txs.some(t => t.cat === 'logement' && / LOYER /.test(normText(t.label)))) I.logement = 'locataire';
   if (txs.some(t => /PRET IMMO|CREDIT IMMO|TAXE FONCIERE/.test(normText(t.label)))) I.logement = 'proprietaire_credit';
@@ -660,7 +726,13 @@ function creditType(s) {
 function detectCredits(txs) {
   // groupes = même organisme + même mensualité (±5 %)…
   const groups = [];
-  for (const t of txs) if (t.amount < 0 && t.cat === 'credit') {
+  // un même contrat change parfois de libellé (organisme renommé) : le numéro de contrat les relie
+  const codes = t => (String(t.label).toUpperCase().match(/\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{8,}\b/g) || []);
+  const canon = {}, cred = txs.filter(t => t.amount < 0 && t.cat === 'credit');
+  for (const t of cred) { const cs = codes(t); const m = cs.map(c => canon[c]).find(Boolean) || t.merchant; cs.forEach(c => canon[c] = canon[c] || m); }
+  const mOf = t => codes(t).map(c => canon[c]).find(Boolean) || t.merchant;
+  for (const t0 of cred) {
+    const t = { ...t0, merchant: mOf(t0) };
     const v = -t.amount, g = groups.find(g => g.m === t.merchant && Math.abs(median(g.l.map(x => -x.amount)) - v) <= v * 0.05);
     if (g) g.l.push(t); else groups.push({ m: t.merchant, l: [t] });
   }
@@ -695,7 +767,7 @@ function parseCreditDoc(lines, today = new Date()) {
   const all = lines.join(' '), o = { min: 1, max: 5e6 };
   const r = { type: creditType(lines.slice(0, 40).join(' ') + ' ' + all.slice(0, 4000)) };
   const v = (specs, opt = o) => { const x = findLabeled(lines, specs, opt); return x ? x.value : null; };
-  r.montant = v([{ inc: 'MONTANTDUPRET' }, { inc: 'MONTANTDUCREDIT' }, { inc: 'MONTANTEMPRUNTE' }, { inc: 'CAPITALEMPRUNTE' }, { inc: 'MONTANTFINANCE' }, { inc: 'MONTANTTOTALDUCREDIT' }, { inc: 'CAPITALINITIAL' }]);
+  r.montant = v([{ inc: 'MONTANTTOTALDUCREDIT' }, { inc: 'MONTANTDUPRET' }, { inc: 'MONTANTDUCREDIT' }, { inc: 'MONTANTEMPRUNTE' }, { inc: 'CAPITALEMPRUNTE' }, { inc: 'MONTANTFINANCE' }, { inc: 'MONTANTTOTALDUCREDIT' }, { inc: 'CAPITALINITIAL' }]);
   r.taux = findPct(lines, [{ inc: 'TAUXDEBITEUR' }, { inc: 'TAUXNOMINAL' }, { inc: 'TAUXFIXE' }, { inc: 'TAUXDINTERET' }, { inc: 'TAUXANNUEL', exc: ['EFFECTIF'] }]);
   r.taeg = findPct(lines, [{ inc: 'TAEG' }, { inc: 'TAUXANNUELEFFECTIFGLOBAL' }]);
   if (r.taux == null) r.taux = r.taeg;
@@ -703,19 +775,38 @@ function parseCreditDoc(lines, today = new Date()) {
   r.assurance = v([{ inc: 'COTISATIONASSURANCE' }, { inc: 'ASSURANCEEMPRUNTEUR' }, { inc: 'COUTMENSUELDELASSURANCE' }, { inc: 'PRIMEDASSURANCE' }], { min: 1, max: 2000 });
   r.crd = v([{ inc: 'CAPITALRESTANTDU' }, { inc: 'MONTANTRESTANTDU' }, { inc: 'CAPITALRESTANT' }, { inc: 'SOLDERESTANTDU' }, { inc: 'MONTANTUTILISE' }, { inc: 'DETTERESTANTE' }]);
   // Tableau d'amortissement : lignes « date + plusieurs montants » ; on prend la dernière échéance passée
-  const tab = [];
+  const tab = [], sched = [], DRE = /(\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4})/g;
+  let colAss = -1;
   for (const l of lines) {
-    const dm = l.match(/(\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4})/); if (!dm) continue;
-    const amts = (l.slice(dm.index + dm[0].length).match(AMT_RE) || []).map(parseAmount).filter(x => !isNaN(x));
-    const d = parseDate(dm[1].replace(/\./g, '/')); if (d && amts.length >= 3) tab.push({ d, amts });
+    const C = compactUp(l);
+    if (/CAPITAL|INTERET|AMORTI/.test(C) && /ASSURANCE|PRESTATION|COTISATION/.test(C) && !/\d{2}\/\d{2}\/\d{2}/.test(l)) { // en-tête : ordre des colonnes
+      const cols = ['ECHEANCE|MONTANT|MENSUALITE|PRELEVEMENT', 'INTERET', 'ASSURANCE|PRESTATION|COTISATION', 'CAPITAL(?!RESTANT)|AMORTI', 'RESTANT|CRD'].map(re => C.search(new RegExp(re)));
+      const ord = cols.map((p, i) => [p, i]).filter(x => x[0] >= 0).sort((a, b) => a[0] - b[0]).map(x => x[1]); colAss = ord.indexOf(2);
+    }
+    const ds = [...l.matchAll(DRE)]; if (!ds.length) continue;
+    const lastD = ds[ds.length - 1], amts = (l.slice(lastD.index + lastD[0].length).match(AMT_RE) || []).map(parseAmount).filter(x => !isNaN(x));
+    const d = parseDate(ds[0][1].replace(/\./g, '/')); if (!d) continue;
+    if (ds.length === 1 && amts.length >= 3) tab.push({ d, amts });
+    else if (ds.length === 2 && amts.length === 1 && /^\s*\d{1,3}\s/.test(l)) { const d2 = parseDate(ds[1][1].replace(/\./g, '/')); if (d2) sched.push({ du: d, au: d2, montant: amts[0], nb: parseInt(l) }); }
   }
   if (tab.length >= 6) {
     tab.sort((a, b) => a.d - b.d);
     const past = tab.filter(t => t.d <= today), cur = past[past.length - 1] || tab[0];
     r.crd = cur.amts[cur.amts.length - 1];
     if (!r.mensualite) r.mensualite = median(tab.slice(0, 12).map(t => t.amts[0]));
+    if (colAss >= 0 && cur.amts.length >= 4 && cur.amts[colAss] > 0 && cur.amts[colAss] < cur.amts[0] / 2) r.assurance = cur.amts[colAss];
     r.fin = tab[tab.length - 1].d;
     r.echeancesRestantes = tab.filter(t => t.d > today).length;
+    r.tableau = true;
+  }
+  if (sched.length) { // échéancier « du … au … : montant » (ex. après résiliation d'une option)
+    sched.sort((a, b) => a.du - b.du);
+    const cur = sched.filter(x => x.du <= today).pop() || sched[0];
+    r.mensualite = cur.montant; r.fin = sched[sched.length - 1].au;
+    r.echeancesRestantes = sched.filter(x => x.au > today).reduce((n, x) => n + (x.du > today ? x.nb : Math.max(0, moisEntre(today, x.au) + (x.au.getUTCDate() >= today.getUTCDate() ? 1 : 0))), 0);
+    const prev = sched.filter(x => x.du <= today).slice(-2)[0];
+    if (sched.length > 1 && prev !== cur) r.ancienneMensualite = prev.montant;
+    if (sched.length > 1 && cur === sched[0] && sched[1].montant !== cur.montant) r.prochaineMensualite = { montant: sched[1].montant, date: sched[1].du };
   }
   if (!r.fin) {
     const fm = all.match(/(?:derni[èe]re [ée]ch[ée]ance|date de fin|fin (?:du|de) (?:pr[êe]t|cr[ée]dit)|terme)\D{0,30}(\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4})/i);
@@ -723,10 +814,12 @@ function parseCreditDoc(lines, today = new Date()) {
   }
   const dur = all.match(/dur[ée]e\D{0,30}?(\d{1,3})\s*mois/i); if (dur) r.dureeMois = +dur[1];
   const C = compactUp(all);
-  r.assuranceResiliee = /(RESILIATION|RESILIE|ANNULATION|ANNULE|SUPPRESSION|SUPPRIME|RENONCIATION|RETRAIT)\w{0,40}ASSURANCE|ASSURANCE\w{0,60}(RESILIE|ANNULE|SUPPRIME|RESILIATION|ANNULATION|SUPPRESSION)/.test(C);
+  r.assuranceResiliee = /(RESILIATION|RESILIE|ANNULATION|ANNULE|SUPPRESSION|SUPPRIME|RENONCIATION|RETRAIT)\w{0,60}(ASSURANCE|EMPRUNTEUR|DECES|\bDI\b)|(ASSURANCE|EMPRUNTEUR)\w{0,60}(RESILIE|ANNULE|SUPPRIME|RESILIATION|ANNULATION|SUPPRESSION)/.test(C);
+  if (r.assuranceResiliee) r.assurance = 0;
+  const num = all.match(/n[°º]\s*(?:du\s+)?(?:contrat|dossier|pr[êe]t)[^:\n]{0,20}:?\s*([A-Z0-9]{6,})/i); if (num) r.contrat = num[1];
   const ORG = ['CREDIPAR', 'DIAC', 'MOBILIZE', 'STELLANTIS', 'PSABANQUE', 'TOYOTA', 'VOLKSWAGEN', 'BMWFINANCE', 'COFIDIS', 'CETELEM', 'SOFINCO', 'FRANFINANCE', 'ONEY', 'FLOA', 'YOUNITED', 'CACONSUMER', 'CREDITAGRICOLE', 'LCL', 'CAISSEDEPARGNE', 'BANQUEPOPULAIRE', 'BNPPARIBAS', 'SOCIETEGENERALE', 'CREDITMUTUEL', 'CIC', 'LABANQUEPOSTALE', 'BOURSOBANK'];
   r.organismeCompact = ORG.find(o => C.includes(o)) || null;
-  r.found = ['montant', 'taux', 'mensualite', 'crd', 'fin'].filter(k => r[k] != null).length;
+  r.found = ['montant', 'taux', 'mensualite', 'crd', 'fin'].filter(k => r[k] != null).length + (r.assuranceResiliee ? 1 : 0);
   return r;
 }
 // Associe un crédit lu dans un document à une mensualité déjà vue sur les relevés
@@ -840,7 +933,7 @@ function toIdentify(txs, overrides = {}) {
     (g[k] = g[k] || { key, sens: t.amount > 0 ? 'entree' : 'sortie', l: [] }).l.push(t);
   }
   return Object.values(g).map(x => ({ key: x.key, sens: x.sens, n: x.l.length, montant: round2(median(x.l.map(t => Math.abs(t.amount)))), total: x.l.reduce((s, t) => s + Math.abs(t.amount), 0), exemple: x.l[x.l.length - 1].label }))
-    .filter(x => overrides[x.key] != null || x.n >= 2 || x.montant >= 150).sort((a, b) => b.total - a.total).slice(0, 25);
+    .filter(x => overrides[x.key] != null || (x.total >= 60 && (x.n >= 2 || x.montant >= 150))).sort((a, b) => b.total - a.total).slice(0, 25);
 }
 
 /* ---------- Virements entre deux comptes importés : la sortie de l'un est l'entrée de l'autre ---------- */
@@ -854,6 +947,40 @@ function markInternalPairs(txs) {
     if (j < 0) return; const k = c.splice(j, 1)[0];
     out[i] = { ...t, cat: 'interne', grp: 'interne', paire: true }; out[k] = { ...out[k], cat: 'interne', grp: 'interne', paire: true };
   });
+  return out;
+}
+// Nom d'une personne en face d'un virement (« VIR INST de MR JEAN DUPONT » → « DUPONT JEAN »)
+const PERS_NOISE = / (VIREMENT|VIR|VIRT|EMIS|EN|VOTRE|FAVEUR|INST|INSTANTANE|DE|DU|VERS|WEB|M|MR|MME|MLLE|MONSIEUR|MADAME|OU|ET|PERMANENT|SEPA|RECU|WERO|LYDIA|PAYLIB) /;
+function personKey(label) {
+  const c = normText(String(label || '').split(/ - | \/ /)[0].split(/\s+/).filter(w => !/\d/.test(w)).join(' ')); if (!/ (VIR|VIREMENT|WERO|LYDIA|PAYLIB|INST) /.test(c)) return null;
+  const r = c.trim().split(' ').filter(x => !PERS_NOISE.test(' ' + x + ' ')).join(' ');
+  const w = r.split(' ').filter(x => /^[A-Z]{2,}$/.test(x) && !/^(SAS|SARL|SCI|SA|EURL|CABINET|AGENCE|STE|SOCIETE|BANQUE|CAISSE|CREDIT|FINANCES?|PUBLIQUES|DGFIP|CAF|PAIERIE|TRESOR|SGC|UNIV|COMPAGNIE|GENERALE|ASSOCIATION|ASSO|CLUB)$/.test(x));
+  if (w.length < 2 || w.length > 5 || r.length > 50) return null;
+  return w.slice(0, 2).sort().join(' ');
+}
+// Deuxième passe, sur l'ensemble des opérations (ce qu'une seule ligne ne permet pas de savoir) :
+// virements entre comptes importés, colocataires reconnus, loyer versé chaque mois à une agence ou un bailleur
+function classifyAll(raw, ctx = {}) {
+  const out = markInternalPairs(raw.map(t => categorize(t, ctx)));
+  if (ctx.aiColocOk) { // colocation : la même personne que dans un « Tricount »/« coloc », ou une personne à qui l'on vire régulièrement
+    const coloc = new Set(out.filter(t => t.grp === 'partage').map(t => personKey(t.label)).filter(Boolean));
+    const per = {}; out.forEach((t, i) => { if (!['autre', 'autre_credit'].includes(t.cat) || t.manuel || Math.abs(t.amount) < 50) return; const k = personKey(t.label); if (k) (per[k] = per[k] || []).push(i); });
+    for (const [k, ix] of Object.entries(per)) if (ix.length >= 3 && new Set(ix.map(i => monthKey(out[i].date))).size >= 2 && !/ WERO /.test(normText(out[ix[0]].label))) coloc.add(k);
+    out.forEach((t, i) => { if (!t.manuel && ['autre', 'autre_credit'].includes(t.cat) && coloc.has(personKey(t.label))) out[i] = { ...t, cat: t.amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage', colocAuto: true }; });
+  }
+  // caution reçue puis reversée (même montant dans le mois) : ni revenu ni dépense
+  out.forEach((t, i) => { if (!t.caution || t.amount <= 0) return; const j = out.findIndex(u => !u.manuel && u.cat === 'autre' && Math.abs(u.amount + t.amount) < 0.01 && Math.abs(u.date - t.date) <= 31 * DAY); if (j >= 0) out[j] = { ...out[j], cat: 'interne', grp: 'interne', caution: true }; });
+  // prélèvement portant le numéro de contrat d'un crédit déjà reconnu (libellé de l'organisme changé)
+  const CODE = /\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{8,}\b/g, credCodes = new Set(out.filter(t => t.cat === 'credit').flatMap(t => String(t.label).toUpperCase().match(CODE) || []));
+  out.forEach((t, i) => { if (t.amount < 0 && t.cat === 'autre' && !t.manuel && (String(t.label).toUpperCase().match(CODE) || []).some(c => credCodes.has(c))) out[i] = { ...t, cat: 'credit', grp: 'contrainte' }; });
+  // loyer : même virement chaque mois (±8 %), au moins 200 €, vers la même contrepartie
+  const g = {}; out.forEach((t, i) => { if (t.amount < -200 && t.cat === 'autre' && !t.manuel && / (VIR|VIREMENT|VIRT) /.test(normText(t.label))) (g[opKey(t.label)] = g[opKey(t.label)] || []).push(i); });
+  for (const ix of Object.values(g)) {
+    if (ix.length < 3) continue;
+    const l = ix.map(i => out[i]).sort((a, b) => a.date - b.date), a = l.map(t => -t.amount), iv = l.slice(1).map((t, j) => (t.date - l[j].date) / DAY);
+    if (std(a) / mean(a) > 0.08 || median(iv) < 25 || median(iv) > 36) continue;
+    ix.forEach(i => out[i] = { ...out[i], cat: 'logement', grp: 'contrainte', loyerAuto: true });
+  }
   return out;
 }
 // Détail des achats carte présent dans les relevés ? (alors le total mensuel de la carte ne doit pas être compté en plus)
@@ -968,6 +1095,7 @@ const sumKeys = (p, ks) => ks.reduce((s, k) => s + (+p[k] || 0), 0);
 const LIQUIDE = ['livretA', 'ldds', 'lep', 'livretsAutres'];
 const age = p => +p.age1 || null;
 // ctx : { part, shared:Set(merchant), externes:[{label,cat,montant}] } pour la colocation
+function revenusRef(txs, profile) { const d = (+profile.net1 || 0) + (+profile.net2 || 0) + (+profile.autresRevenus || 0); return d > 0 ? d : txs.filter(t => t.amount > 0 && t.grp === 'revenu').reduce((s, t) => s + t.amount, 0) / months(txs); }
 function diagnose(txs, profile, ctx = {}) {
   const nb = months(txs), part = ctx.part ?? 1, shared = ctx.shared || new Set();
   const f = t => shared.has(t.merchant) ? part : 1;           // quote-part personnelle
@@ -987,6 +1115,10 @@ function diagnose(txs, profile, ctx = {}) {
   const envoye = -txs.filter(t => t.cat === 'coloc_envoye').reduce((s, t) => s + t.amount, 0) / nb;
   const coloc = ctx.part != null && ctx.part < 1 ? { attendu: partageAutres - externesPart, reel: recu - envoye, recu, envoye, ecart: (recu - envoye) - (partageAutres - externesPart) } : null;
 
+  // remboursements entre colocataires : ce que l'on reçoit pour des courses avancées réduit ses propres dépenses,
+  // ce que l'on verse à un coloc pour une facture qu'il a payée s'y ajoute
+  let colocNet = 0;
+  if (!shared.size) { colocNet = envoye - recu; parGrp.courant += colocNet; parCat.coloc_net = colocNet; }
   const prov = Math.min(+profile.provisionCharges || 0, parGrp.epargne);
   if (prov > 0) { parGrp.epargne -= prov; parGrp.contrainte += prov; parCat.provisions = prov; parCat.epargne = Math.max(0, (parCat.epargne || 0) - prov); }
   const { contrainte: contraintes, abonnement: abonnements, courant, frais, epargne: epargneVersee } = parGrp;
@@ -999,6 +1131,11 @@ function diagnose(txs, profile, ctx = {}) {
   const listeCredits = (ctx.credits || []).reduce((s, c) => s + (+c.mensualite || 0), 0);
   const credit = (listeCredits || parCat.credit || 0) + (+profile.mensualitesCredit || 0);
   const depenses = contraintes + abonnements + courant + frais;
+  // dépenses exceptionnelles : gros montants ponctuels (réparation, voyage, caution…) — comptés, mais montrés à part
+  const cnt = {}; txs.forEach(t => { if (t.amount < 0) cnt[t.merchant] = (cnt[t.merchant] || 0) + 1; });
+  const seuil = Math.max(250, revenusRef(txs, profile) * 0.1);
+  const exceptionnelles = txs.filter(t => t.amount < -seuil && t.grp === 'courant' && (cnt[t.merchant] || 0) <= 2).sort((a, b) => a.amount - b.amount);
+  const exceptionnel = -exceptionnelles.reduce((s, t) => s + t.amount, 0) / nb;
   const resteAVivre = revenus - contraintes - frais;
   const uc = 1 + Math.max(0, (+profile.adultes || 1) - 1) * 0.5 + (+profile.enfantsPlus14 || 0) * 0.5 + (+profile.enfantsMoins14 || 0) * 0.3;
   const moisCible = CONFIG.moisPrecaution[profile.statut] || 3;
@@ -1007,11 +1144,11 @@ function diagnose(txs, profile, ctx = {}) {
   const epargneInvestie = sumKeys(profile, ['avMontant', 'perMontant', 'ctoMontant', 'epSalMontant']) + (+profile.peaValeur || +profile.peaVersements || 0);
   return {
     nbMois: nb, revenus, revenusDetectes, revenusDeclares, contraintes, abonnements, courant, frais, epargneVersee, depenses,
-    resteAVivre, resteAVivreUC: resteAVivre / uc, uc, capaciteEpargne: revenus - depenses,
+    resteAVivre, resteAVivreUC: resteAVivre / uc, uc, capaciteEpargne: revenus - depenses, exceptionnel, exceptionnelles: exceptionnelles.slice(0, 8).map(t => ({ date: t.date, label: t.label, montant: -t.amount })), capaciteHorsExceptionnel: revenus - depenses + exceptionnel,
     tauxEpargne: revenus > 0 ? (revenus - depenses) / revenus : 0,
     tauxEndettement: revenus > 0 ? credit / revenus : 0, credit,
     precautionCible: essentiels * moisCible, moisCible, essentiels,
-    epargneDispo, epargneInvestie, tmi: tmi(+profile.rfr, +profile.parts), parCat, coloc, credits: ctx.credits || []
+    epargneDispo, epargneInvestie, tmi: tmi(+profile.rfr, +profile.parts), parCat, coloc, colocNet, credits: ctx.credits || []
   };
 }
 
@@ -1107,7 +1244,7 @@ function investPlan(d, p, inv) {
     finals: { pessimiste: scen('pessimiste').at(-1), median: med.at(-1), optimiste: scen('optimiste').at(-1), verses: verses.at(-1), fraisChers: fraisChers.at(-1) } };
 }
 
-global.Engine = { markInternalPairs, hasCardDetail, AI_CODES, aiMap, parseBrokerCSV, brokerKind, toIdentify, opKey, months, CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
+global.Engine = { classifyAll, holderMatch, holdersFrom, personKey, counterpart, markInternalPairs, hasCardDetail, AI_CODES, aiMap, parseBrokerCSV, brokerKind, toIdentify, opKey, months, CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="ui">
@@ -1136,7 +1273,7 @@ const fresh = () => ({
   screen: 'accueil', device: detectDevice(), banques: [], tutoBank: null,
   profile: { profilType: 'jeune_actif', adultes: 1, enfantsMoins14: 0, enfantsPlus14: 0, logement: 'locataire', statut: '', horizon: '', tolerance: '', projets: [],
     colocNb: 2, colocPart: '', colocAliases: 'TRICOUNT', externes: [] },
-  docs: [], raw: [], flags: {}, shared: {}, overrides: {}, incEx: {}, placements: {}, aiOn: null, aiCats: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
+  docs: [], raw: [], holders: [], comptes: [], flags: {}, shared: {}, overrides: {}, incEx: {}, placements: {}, aiOn: null, aiCats: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
   inv: { initial: 0, mensuel: null, horizon: null, fraisEtf: 0.2, fraisFonds: 1.8 }
 });
 let S = fresh();
@@ -1144,13 +1281,14 @@ let S = fresh();
 /* ---------- Pipeline d'analyse ---------- */
 const isColoc = () => S.profile.profilType === 'colocation';
 const colocPart = () => { const p = S.profile; const v = +p.colocPart; return v > 0 && v <= 100 ? v / 100 : 1 / ((+p.colocNb || 1) + 1); };
-const catCtx = () => ({ overrides: S.overrides, cardDetail: E.hasCardDetail(S.raw), aiCats: S.aiOn ? S.aiCats : null, aiColocOk: isColoc() });
-const catAll = () => E.markInternalPairs(S.raw.map(t => E.categorize(t, catCtx())));
+const catCtx = () => ({ overrides: S.overrides, cardDetail: E.hasCardDetail(S.raw), aiCats: S.aiOn ? S.aiCats : null, aiColocOk: isColoc(), holders: S.holders || [], comptes: S.comptes || [] });
+const catAll = () => E.classifyAll(S.raw, catCtx());
 const normAlias = a => a.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 function compute() {
+  if (!S.applied && S.raw.length) applyInferences(); // une opération reclassée change les revenus : on recalcule
   const p = S.profile, coloc = isColoc();
   const aliases = coloc ? String(p.colocAliases || '').split(/[,;]/).map(normAlias).filter(Boolean) : [];
-  const txs = E.markInternalPairs(S.raw.map(t => E.categorize(t, { ...catCtx(), colocAliases: aliases })));
+  const txs = E.classifyAll(S.raw, { ...catCtx(), colocAliases: aliases });
   const part = coloc ? colocPart() : 1, sharedSet = new Set(coloc ? Object.keys(S.shared).filter(k => S.shared[k]) : []);
   const recurring = E.detectRecurring(txs).map(r => ({ ...r, part: sharedSet.has(r.merchant) ? part : 1 }));
   const anomalies = E.detectAnomalies(txs, recurring, p);
@@ -1360,17 +1498,20 @@ function pdfDebugHtml() {
 
 /* ---------- « Voici ce que j'ai compris » ---------- */
 function applyInferences() {
-  const I = S.inferred = E.infer(S.raw, catCtx()), p = S.profile;
+  const I = S.inferred = E.infer(S.raw, catCtx()), p = S.profile; S.avisIA = null;
   const paieNets = S.docs.filter(d => d.kind === 'paie' && d.net).map(d => d.net);
-  if (!p.net1) p.net1 = paieNets.length ? Math.round(avg(paieNets) * 100) / 100 : (I.salaire || I.pension || '');
+  const A = S.auto = S.auto || {}; // valeurs trouvées automatiquement : remplacées si les données changent, jamais une saisie de l'utilisateur
+  const net = I.salaire && paieNets.length ? Math.round([...paieNets].sort((a, b) => a - b)[paieNets.length >> 1] * 100) / 100 : paieNets.length ? Math.round(avg(paieNets) * 100) / 100 : (I.salaire || I.pension || '');
+  if (!p.net1 || +p.net1 === +A.net1) { p.net1 = net; A.net1 = net; }
   if (I.autresRevenusDetail) p.autresRevenus = Math.round(I.autresRevenusDetail.filter(y => !y.arretee && !S.incEx[y.nom]).reduce((x, y) => x + y.moyenne, 0) * 100) / 100 || '';
   if (!p.statut && I.statut) p.statut = I.statut;
-  if (I.logement) p.logement = I.logement;
+  if (I.logement && (!p.logement || p.logement === A.logement)) { p.logement = I.logement; A.logement = I.logement; }
   if (I.coloc) { p.profilType = 'colocation'; p.colocAliases = I.coloc.alias; }
   else if (I.statut === 'retraite') p.profilType = 'retraite';
   S.applied = true;
 }
 function renderCompris() {
+  if (!S.applied && S.raw.length) applyInferences();
   const I = S.inferred, p = S.profile, cov = E.coverage(S.raw), t = E.tmi(+p.rfr, +p.parts);
   const row = (ico, label, val, edit, src) => `<div class="card hl !p-4"><div class="flex items-start gap-3"><span class="text-xl">${ico}</span><div class="flex-1"><div class="text-xs text-slate-500">${label} ${src ? badge(src, 'blue') : ''}</div><div class="font-semibold text-slate-900 mt-0.5">${val}</div>${edit ? `<div class="mt-2">${edit}</div>` : ''}</div></div></div>`;
   const ep = [['livretA', 'Livret A'], ['ldds', 'LDDS'], ['lep', 'LEP'], ['livretsAutres', 'Autres livrets'], ['peaValeur', 'PEA'], ['avMontant', 'Assurance-vie'], ['perMontant', 'PER']].filter(([k]) => +p[k] > 0);
@@ -1383,7 +1524,7 @@ function renderCompris() {
       ${row('🏠', 'Logement', { locataire: 'Locataire', proprietaire_credit: 'Propriétaire avec crédit', proprietaire: 'Propriétaire', heberge: 'Hébergé' }[p.logement], `<select data-k="logement" class="inp-sm">${[['locataire', 'Locataire'], ['proprietaire_credit', 'Propriétaire avec crédit'], ['proprietaire', 'Propriétaire sans crédit'], ['heberge', 'Hébergé']].map(([v, l]) => `<option value="${v}" ${p.logement === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`, I.logement ? 'relevés' : '')}
       ${I.coloc ? row('👥', 'Colocation probable', `${I.coloc.nb} virements « ${esc(I.coloc.alias)} » repérés`, `<label class="flex items-center gap-2 text-sm"><input type="checkbox" id="cbColoc" ${isColoc() ? 'checked' : ''} class="w-4 h-4"> Oui, je suis en colocation</label>`, 'relevés') : ''}
       ${(() => { const dc = E.detectCredits(catAll()); return dc.length ? row('🏷️', 'Crédits repérés sur vos relevés', dc.map(c => `${esc(c.organisme)} ${eur(c.mensualite, 0)}/mois`).join(' · '), '<span class="text-xs text-slate-500">Vous pourrez les compléter à l\'étape « Vos crédits ».</span>', 'relevés') : ''; })()}
-      ${(() => { const ct = catAll().filter(t => t.cat === 'carte_total'); if (!ct.length) return ''; const det = S.raw.some(t => t.encours), m = -ct.reduce((x, t) => x + t.amount, 0) / E.months(S.raw); return row('💳', 'Carte à débit différé', `≈ ${eur(m, 0)}/mois prélevés en une fois`, det ? '<span class="text-xs text-emerald-700">Détail des achats fourni : le total mensuel est retiré pour ne pas compter deux fois.</span>' : '<span class="text-xs text-amber-700">Le détail des achats manque : ajoutez vos relevés d\'encours de carte à l\'étape Documents pour savoir où part cet argent.</span>', 'relevés'); })()}
+      ${(() => { const ct = catAll().filter(t => t.cat === 'carte_total'); if (!ct.length) return ''; const det = E.hasCardDetail(S.raw), m = -ct.reduce((x, t) => x + t.amount, 0) / E.months(S.raw); return row('💳', 'Carte à débit différé', `≈ ${eur(m, 0)}/mois prélevés en une fois`, det ? '<span class="text-xs text-emerald-700">Détail des achats fourni : le total mensuel est retiré pour ne pas compter deux fois.</span>' : '<span class="text-xs text-amber-700">Le détail des achats manque : ajoutez vos relevés d\'encours de carte à l\'étape Documents pour savoir où part cet argent.</span>', 'relevés'); })()}
       ${row('🐷', 'Épargne', ep.length ? ep.map(([k, l]) => `${l} ${eur(+p[k], 0)}`).join(' · ') : 'Aucun solde lu', ep.length ? '' : '<span class="text-xs text-slate-500">On vous la demandera dans un instant.</span>', ep.length ? 'relevés' : '')}
       ${I.versementEpargne ? row('↪️', 'Virements vers vos livrets', `≈ ${eur(I.versementEpargne, 0)}/mois`, `<div class="text-sm text-slate-600">Dont <input type="number" inputmode="decimal" data-k="provisionCharges" value="${esc(p.provisionCharges ?? '')}" placeholder="0" class="inp-sm w-24"> €/mois mis de côté pour des <b>dépenses prévues</b> (taxe foncière, copro, assurance annuelle…)</div><p class="text-xs text-slate-400 mt-1">Cet argent n'est pas de l'épargne : il est déjà dépensé d'avance. Il sera compté dans vos charges.</p>`, 'relevés') : ''}
       ${row('🧾', 'Tranche d\'imposition (facultatif)', p.rfr ? `RFR ${(+p.rfr).toLocaleString('fr-FR')} € · ${p.parts || '?'} part(s) · taux marginal ≈ ${t != null ? Math.round(t * 100) + ' %' : '?'}` : 'Non renseignée', `<p class="text-xs text-slate-500 mb-2">L'impôt est déjà prélevé à la source sur le salaire : rien à payer en plus ici. Ces deux chiffres de l'avis d'impôt servent seulement à estimer votre tranche, pour savoir si un PER ou un LEP vous intéresse.</p><div class="flex gap-2 flex-wrap items-center text-sm">Revenu fiscal de référence <input type="number" inputmode="decimal" data-k="rfr" value="${esc(p.rfr)}" class="inp-sm w-32"> parts <input type="number" inputmode="decimal" data-k="parts" value="${esc(p.parts)}" class="inp-sm w-20"></div>`, p.rfr && S.docs.some(d => d.kind === 'avis' && d.ok) ? 'avis d\'impôt' : '')}
@@ -1425,7 +1566,7 @@ function renderEpargne() {
 /* ---------- Crédits : documents + détection + saisie manuelle ---------- */
 function mergeCredit(list, c) {
   const m = E.matchCredit(list, c);
-  if (m) { for (const k of ['mensualite', 'crd', 'taux', 'fin', 'assurance']) if (c[k] !== '' && c[k] != null && !(k === 'mensualite' && m.source !== 'manuel' && m.mensualite)) m[k] = c[k]; if (c.type !== 'autre') m.type = c.type; if (c.assuranceResiliee) m.assuranceResiliee = true; if (!m.organisme && c.organisme) m.organisme = c.organisme; m.docName = c.docName; m.source = m.source === 'releve' ? 'releve+document' : m.source; }
+  if (m) { for (const k of ['mensualite', 'crd', 'taux', 'fin', 'assurance']) if (c[k] !== '' && c[k] != null && !(k === 'mensualite' && m.source !== 'manuel' && m.mensualite)) m[k] = c[k]; if (c.type !== 'autre') m.type = c.type; if (c.assuranceResiliee) m.assuranceResiliee = true; if (m.assuranceResiliee) m.assurance = 0; if (!m.organisme && c.organisme) m.organisme = c.organisme; m.docName = c.docName; m.source = m.source === 'releve' ? 'releve+document' : m.source; }
   else list.push({ ...c });
 }
 function initCredits() {
@@ -1476,7 +1617,7 @@ function bindWizard() {
   v.querySelectorAll('[data-ext]').forEach(el => el.addEventListener('change', () => { const e = S.profile.externes[+el.dataset.ext]; e[el.dataset.f] = el.type === 'number' ? +el.value || 0 : el.value; }));
   v.querySelectorAll('[data-extdel]').forEach(b => b.onclick = () => { S.profile.externes.splice(+b.dataset.extdel, 1); renderWizard(); });
   v.querySelectorAll('[data-deldoc]').forEach(b => b.onclick = () => removeDoc(+b.dataset.deldoc));
-  v.querySelectorAll('[data-ovr]').forEach(el => el.onchange = () => { const k = el.dataset.ovr; if (el.value) S.overrides[k] = el.value; else delete S.overrides[k]; if (el.value === 'coloc' && !isColoc()) { S.profile.profilType = 'colocation'; S.profile.adultes = 1; toast('Colocation activée : vous préciserez le partage plus loin.'); } });
+  v.querySelectorAll('[data-ovr]').forEach(el => el.onchange = () => { const k = el.dataset.ovr; if (el.value) S.overrides[k] = el.value; else delete S.overrides[k]; S.applied = false; if (el.value === 'coloc' && !isColoc()) { S.profile.profilType = 'colocation'; S.profile.adultes = 1; toast('Colocation activée : vous préciserez le partage plus loin.'); } });
   v.querySelectorAll('[data-docnet]').forEach(el => el.onchange = () => { const d = S.docs[+el.dataset.docnet]; d.net = +el.value || null; d.ok = !!d.net; d.detail = d.net ? `Fiche de paie : net payé ${eur(d.net, 2)} (saisi)` : d.detail; const nets = S.docs.filter(x => x.kind === 'paie' && x.net).map(x => x.net); if (nets.length) S.profile.net1 = Math.round(avg(nets) * 100) / 100; S.applied = false; renderWizard(); });
   v.querySelectorAll('[data-reclass]').forEach(el => el.onchange = () => { if (el.value) reclassify(+el.dataset.reclass, el.value); });
   v.querySelectorAll('[data-pltype]').forEach(el => el.onchange = () => { S.placements[el.dataset.pltype].type = el.value; applyPlacements(); renderWizard(); });
@@ -1509,11 +1650,11 @@ function bindWizard() {
 }
 
 /* ---------- Lecture des documents (sur l'appareil) ---------- */
-let pdfjsPromise = null;
+let pdfjsPromise = null, PDF_WASM = null; // (un module importé ne peut pas recevoir de propriété : l'URL des décodeurs est gardée à part)
 function loadPdfJs() {
   if (pdfjsPromise) return pdfjsPromise;
   const tryLoad = async () => {
-    try { const lib = await import('./vendor/pdf.min.mjs'); lib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', location.href).href; lib.__wasmUrl = new URL('./vendor/wasm/', location.href).href; return lib; }
+    try { const lib = await import('./vendor/pdf.min.mjs'); lib.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', location.href).href; PDF_WASM = new URL('./vendor/wasm/', location.href).href; return lib; }
     catch (e) { const lib = await import(E.CONFIG.pdfjs.lib); lib.GlobalWorkerOptions.workerSrc = E.CONFIG.pdfjs.worker; return lib; }
   };
   return (pdfjsPromise = tryLoad().catch(e => { pdfjsPromise = null; throw new Error('le lecteur PDF n\'a pas pu se charger (connexion nécessaire la première fois)'); }));
@@ -1521,7 +1662,7 @@ function loadPdfJs() {
 async function openPdf(lib, bytes, name) {
   let password;
   for (let k = 0; k < 4; k++) {
-    try { return await lib.getDocument({ data: bytes.slice(), password, isEvalSupported: false, disableFontFace: true, verbosity: 0, ...(lib.__wasmUrl ? { wasmUrl: lib.__wasmUrl } : {}) }).promise; }
+    try { return await lib.getDocument({ data: bytes.slice(), password, isEvalSupported: false, disableFontFace: true, verbosity: 0, ...(PDF_WASM ? { wasmUrl: PDF_WASM } : {}) }).promise; }
     catch (e) {
       if (e && e.name === 'PasswordException') {
         password = await modal({ title: '🔐 Document protégé', body: `« ${esc(name)} » est protégé par un mot de passe${k ? ' <b class="text-red-600">(incorrect, réessayez)</b>' : ''}. Il reste sur cet appareil.`, input: 'password', ok: 'Ouvrir' });
@@ -1693,6 +1834,9 @@ async function handleFiles(files) {
               : `Ordres du compte ${br.compte} : pas nécessaires pour l'audit (ignorés)`) });
         } else {
           const r = E.parseCSV(text, f.name);
+          S.holders = S.holders || []; S.comptes = S.comptes || [];
+          for (const h of r.holders || []) if (!S.holders.some(x => x.join(' ') === h.join(' '))) S.holders.push(h);
+          for (const c of r.comptes || []) if (!S.comptes.some(x => x.num === c.num)) S.comptes.push(c);
           if (r.epargne) {
             if (r.epargne.solde != null) S.profile[SAV_FIELD[r.epargne.type]] = r.epargne.solde;
             Object.assign(doc, { kind: 'epargne', ok: r.epargne.solde != null, detail: r.epargne.solde != null ? `${SAV_LABEL[r.epargne.type]} : solde ${eur(r.epargne.solde, 0)}` : `${SAV_LABEL[r.epargne.type]} : solde introuvable, saisissez-le à l'étape « Épargne »` });
@@ -1863,8 +2007,8 @@ async function readDocSmart(doc, rows, lines) {
 /* ---------- Contrôle de cohérence : les plus grosses opérations non identifiées, à classer sur place ---------- */
 function bigUnknown(txs, n = 10) {
   const nb = E.months(S.raw), g = {};
-  for (const t of txs) if (['autre', 'autre_credit'].includes(t.cat) && !t.manuel) { const k = E.opKey(t.label) + (t.amount > 0 ? '|+' : '|-'); (g[k] = g[k] || { key: E.opKey(t.label), sens: t.amount > 0 ? 'entree' : 'sortie', ex: t.label, tot: 0, n: 0 }); g[k].tot += Math.abs(t.amount); g[k].n++; }
-  return Object.values(g).map(x => ({ ...x, mois: x.tot / nb })).sort((a, b) => b.mois - a.mois).slice(0, n);
+  for (const t of txs) if (['autre', 'autre_credit'].includes(t.cat) && !t.manuel && / (VIR|VIREMENT|PRLV|PRELEVEMENT|WERO|LYDIA|PAYPAL|INST) /.test(' ' + t.label.toUpperCase().normalize('NFD').replace(/[^A-Z0-9]+/g, ' ') + ' ')) { const k = E.opKey(t.label) + (t.amount > 0 ? '|+' : '|-'); (g[k] = g[k] || { key: E.opKey(t.label), sens: t.amount > 0 ? 'entree' : 'sortie', ex: t.label, tot: 0, n: 0 }); g[k].tot += Math.abs(t.amount); g[k].n++; }
+  return Object.values(g).filter(x => x.tot >= 60).map(x => ({ ...x, mois: x.tot / nb })).sort((a, b) => b.mois - a.mois).slice(0, n);
 }
 function coherenceHtml(d, txs) {
   const autres = d.parCat.autre || 0;
@@ -1873,9 +2017,52 @@ function coherenceHtml(d, txs) {
   const B = bigUnknown(txs);
   return card(`<div class="flex gap-3"><span class="text-2xl">⚠️</span><div class="flex-1"><h2 class="font-semibold text-amber-900">Ces chiffres sont probablement faussés</h2>
     <p class="text-sm text-slate-600 mt-1">${autres > 0.3 * d.revenus ? `${eur(autres, 0)}/mois partent en « Autres dépenses » sans être identifiés. ` : ''}${d.revenusDeclares && d.revenusDetectes < 0.5 * d.revenusDeclares ? `Seulement ${eur(d.revenusDetectes, 0)}/mois de revenus retrouvés sur les relevés (vous avez indiqué ${eur(d.revenusDeclares, 0)}). ` : ''}Causes habituelles : virements entre vos propres comptes comptés comme des dépenses, ou relevés d'un compte manquant. Classez les plus grosses opérations ci-dessous : le diagnostic se recalcule aussitôt.</p>
-    <div class="space-y-2 mt-3">${B.map(x => `<div class="border border-slate-200 rounded-xl p-3"><div class="flex justify-between gap-2 text-sm"><span class="font-medium truncate">${esc(x.ex)}</span><span class="whitespace-nowrap ${x.sens === 'entree' ? 'text-emerald-700' : ''}">${x.sens === 'entree' ? '+' : '−'}${eur(x.mois, 0)}/mois</span></div><div class="text-xs text-slate-400">${x.n} opération(s)</div>
+    <div class="space-y-2 mt-3">${B.map(x => `<div class="border border-slate-200 rounded-xl p-3"><div class="flex justify-between gap-2 text-sm"><span class="font-medium truncate">${esc(x.ex)}</span><span class="whitespace-nowrap ${x.sens === 'entree' ? 'text-emerald-700' : ''}">${x.sens === 'entree' ? '+' : '−'}${x.n === 1 ? eur(x.tot, 0) : eur(x.tot, 0) + ' au total'}</span></div><div class="text-xs text-slate-400">${x.n === 1 ? 'une seule fois' : `${x.n} fois · ≈ ${eur(x.mois, 0)}/mois en moyenne`}</div>
       <select data-fixovr="${esc(x.key)}" class="inp !mt-2 !py-1.5 !text-sm">${(x.sens === 'entree' ? CLASS_IN : CLASS_OUT).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>`).join('')}</div></div></div>`, '!border-amber-300 !bg-amber-50/40');
 }
+/* ---------- « En clair » : la lecture qu'en ferait un conseiller, à partir de tout ce qui a été compris ---------- */
+function bilanClair(d, txs) {
+  const I = S.inferred || {}, p = S.profile, nb = d.nbMois, mois = dt => dt ? `${MOIS[new Date(dt).getUTCMonth()]} ${new Date(dt).getUTCFullYear()}` : '';
+  const R = [], F = [], V = [], B = [];
+  if (+p.net1) R.push(`Salaire : <b>${eur(+p.net1, 0)}/mois</b>${I.ancienSalaire && I.ancienSalaire.length ? ` (nouveau poste ; l'ancien salaire d'environ ${eur(I.ancienSalaire[0].montant, 0)} s'est arrêté en ${mois(I.ancienSalaire[0].fin)} et n'est plus compté)` : ''}.`);
+  for (const x of (I.autresRevenusDetail || []).filter(x => !x.arretee && !S.incEx[x.nom])) R.push(`${esc(x.nom)} : <b>≈ ${eur(x.moyenne, 0)}/mois</b> ${x.cat === 'prestations' ? '(montant actuel)' : x.max > x.min * 1.5 ? `en moyenne (de ${eur(x.min, 0)} à ${eur(x.max, 0)} selon les mois)` : 'en moyenne'}.`);
+  const rec = E.detectRecurring(txs).filter(r => r.grp === 'contrainte' && r.cat !== 'credit');
+  for (const r of rec.slice(0, 6)) F.push(`${esc(E.CAT_LABELS[r.cat] || r.cat)} — ${esc(r.merchant)} : ${eur(r.mensuel, 0)}/mois${r.cat === 'logement' && txs.some(t => t.loyerAuto && t.merchant === r.merchant) ? ' <span class="text-slate-400">(virement mensuel reconnu comme loyer)</span>' : ''}`);
+  for (const c of d.credits) F.push(`Crédit ${esc(c.organisme || E.CREDIT_TYPES[c.type] || '')} : ${eur(+c.mensualite || 0, 0)}/mois${c.crd !== '' && c.crd != null ? `, reste ${eur(+c.crd, 0)}` : ''}${c.taux !== '' && c.taux != null ? ` à ${c.taux} %` : ''}${c.fin ? `, fin ${mois(c.fin)}` : ''}${c.assuranceResiliee ? ' (assurance emprunteur résiliée)' : ''}`);
+  const carte = -txs.filter(t => t.cat === 'carte_total').reduce((x, t) => x + t.amount, 0) / nb;
+  V.push(`Vie courante (courses, sorties, achats, carburant…) : <b>${eur(d.courant, 0)}/mois</b> en moyenne sur ${nb} mois${carte > 0 ? `, dont ≈ ${eur(carte, 0)}/mois payés par carte` : ''}.`);
+  if (d.colocNet && Math.abs(d.colocNet) >= 10) V.push(`Remboursements entre colocataires : ${d.colocNet < 0 ? `vous recevez ${eur(-d.colocNet, 0)}/mois de plus que vous n'envoyez (déduit de vos dépenses)` : `vous envoyez ${eur(d.colocNet, 0)}/mois de plus que vous ne recevez (ajouté à vos dépenses)`}.`);
+  if (d.exceptionnelles.length) V.push(`Dépenses exceptionnelles comptées dans la moyenne : ${d.exceptionnelles.slice(0, 4).map(x => `${esc(E.opKey(x.label))} ${eur(x.montant, 0)} (${mois(x.date)})`).join(', ')} — soit ${eur(d.exceptionnel, 0)}/mois.`);
+  const own = t => t.titulaire || t.merchant === 'MES COMPTES';
+  const verse = -txs.filter(t => t.amount < 0 && (t.grp === 'epargne' || own(t))).reduce((x, t) => x + t.amount, 0) / nb;
+  const repris = txs.filter(t => t.amount > 0 && own(t)).reduce((x, t) => x + t.amount, 0) / nb;
+  B.push(`Revenus ${eur(d.revenus, 0)} − dépenses ${eur(d.depenses, 0)} = <b>${d.capaciteEpargne >= 0 ? '+' : ''}${eur(d.capaciteEpargne, 0)}/mois</b>${d.exceptionnel ? ` (${d.capaciteHorsExceptionnel >= 0 ? '+' : ''}${eur(d.capaciteHorsExceptionnel, 0)}/mois sans les dépenses exceptionnelles)` : ''}.`);
+  if (verse > 20 || repris > 20) B.push(`Vers vos comptes d'épargne et de placement : ${eur(verse, 0)}/mois versés, ${eur(repris, 0)}/mois repris, soit <b>${verse - repris >= 0 ? '+' : ''}${eur(verse - repris, 0)}/mois</b> d'épargne nette${verse - repris < 0 ? ' : sur la période, vous avez puisé dans votre épargne' : ''}.`);
+  const verdict = d.capaciteEpargne < -50 ? 'Vos dépenses dépassent vos revenus : la différence est prise sur votre épargne.' : d.capaciteEpargne < 0.05 * d.revenus ? 'Votre budget est à l\'équilibre : les revenus couvrent les dépenses, mais il reste peu à mettre de côté chaque mois.' : `Vous dégagez ${pct(d.tauxEpargne)} de vos revenus : c'est la somme que vous pouvez épargner ou investir sans toucher à vos réserves.`;
+  return { R, F, V, B, verdict };
+}
+function clairHtml(d, txs) {
+  if (!S.raw.length) return '';
+  const b = bilanClair(d, txs), ul = (t, L) => L.length ? `<div class="mt-3"><div class="text-xs font-semibold uppercase tracking-wider text-slate-500">${t}</div><ul class="mt-1 space-y-1 text-sm text-slate-700">${L.map(x => `<li>• ${x}</li>`).join('')}</ul></div>` : '';
+  return card(`<h2 class="font-semibold">🧭 En clair</h2><p class="text-sm text-slate-600 mt-1">${b.verdict}</p>
+    ${ul('Ce qui rentre', b.R)}${ul('Ce qui est fixe', b.F)}${ul('Ce qui varie', b.V)}${ul('Le résultat', b.B)}
+    ${aiAvailable() ? `<div class="mt-4">${S.avisIA ? `<div class="rounded-xl bg-blue-50 p-3 text-sm text-slate-800"><div class="text-xs font-semibold text-blue-700 mb-1">🤖 Avis de l'IA (à partir des seuls chiffres ci-dessus, sans vos noms ni libellés)</div>${S.avisIA}</div>` : `<button type="button" id="btnAvisIA" class="btn-ghost !text-sm">🤖 Demander l'avis d'un conseiller IA sur ce bilan</button>`}</div>` : ''}`);
+}
+async function avisIA() {
+  if (!(await ensureAiConsent())) return;
+  const { d, txs } = compute(), b = bilanClair(d, txs), strip = h => String(h).replace(/<[^>]+>/g, '');
+  const parCat = Object.entries(d.parCat).filter(([, v]) => Math.abs(v) >= 5).sort((a, b) => b[1] - a[1]).map(([c, v]) => `${E.CAT_LABELS[c] || c} : ${Math.round(v)} €/mois`).join('\n');
+  const P = S.profile, ep = `Épargne disponible ${Math.round(d.epargneDispo)} € (objectif de précaution ${Math.round(d.precautionCible)} €), placements ${Math.round(d.epargneInvestie)} €.`;
+  const user = anonymize([b.verdict, 'Revenus :', ...b.R, 'Charges fixes :', ...b.F, 'Vie courante :', ...b.V, 'Résultat :', ...b.B, 'Dépenses par catégorie :', parCat, ep, `Âge : ${P.age || '?'} · situation : ${P.profilType || '?'} · statut : ${P.statut || '?'}`].map(strip).join('\n'));
+  progressModal('L\'IA lit votre bilan…');
+  try {
+    const t = await aiCall('Tu es un conseiller budgétaire français bienveillant et concret. On te donne le bilan chiffré d\'une personne. Réponds en français, en 5 à 8 puces courtes : ce qui va bien, ce qui pèse le plus, et les 3 actions les plus rentables (montants à l\'appui). Ne recalcule pas les totaux, ne promets aucun rendement, ne recommande aucun produit nominatif. Pas d\'introduction ni de conclusion.', user, 900);
+    S.avisIA = esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^\s*[-*•]\s*/gm, '• ').replace(/\n/g, '<br>');
+  } catch (e) { toast('IA indisponible : ' + e.message, 'amber'); }
+  closeModal(); renderSynthese();
+}
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#btnAvisIA')) avisIA(); });
+if (/^localhost$|^127\./.test(location.hostname)) window.__app = { get S() { return S; }, goTo, render, initCredits, compute, applyInferences };
 /* ---------- Diagnostic technique à copier (anonymisé) pour signaler un problème ---------- */
 function diagText() {
   const { d, txs } = compute(), L = [];
@@ -1975,7 +2162,7 @@ function showTab(t) {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   ({ abonnements: renderAbonnements, synthese: renderSynthese, strategie: renderStrategie })[t]();
 }
-document.addEventListener('change', e => { const el = e.target.closest && e.target.closest('[data-fixovr]'); if (!el || !el.value) return; S.overrides[el.dataset.fixovr] = el.value; if (el.value === 'coloc' && !isColoc()) { S.profile.profilType = 'colocation'; S.profile.adultes = 1; } toast('Classé ✓ — diagnostic recalculé'); renderSynthese(); });
+document.addEventListener('change', e => { const el = e.target.closest && e.target.closest('[data-fixovr]'); if (!el || !el.value) return; S.overrides[el.dataset.fixovr] = el.value; S.applied = false; if (el.value === 'coloc' && !isColoc()) { S.profile.profilType = 'colocation'; S.profile.adultes = 1; } toast('Classé ✓ — diagnostic recalculé'); renderSynthese(); });
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) { showTab(b.dataset.tab); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
 function needData() { return !S.raw.length; }
 /* ---------- 2. ABONNEMENTS & FUITES ---------- */
@@ -2059,6 +2246,7 @@ function renderSynthese() {
       ${kpi("Capacité d'épargne", eur(d.capaciteEpargne, 0) + '<span class="text-sm font-normal">/mois</span>', `taux d'épargne ${pct(d.tauxEpargne)}`, d.capaciteEpargne >= 0 ? 'emerald' : 'red')}
       ${kpi('Taux d\'endettement', pct(d.tauxEndettement), `seuil recommandé ${pct(E.CONFIG.seuilEndettement)}`, d.tauxEndettement > E.CONFIG.seuilEndettement ? 'red' : 'slate')}
     </div>
+    ${clairHtml(d, txs)}
     ${coherence}
     ${cl ? card(`<h2 class="font-semibold mb-2">Colocation : équilibre des remboursements</h2>
       <p class="text-xs text-slate-500 mb-3">Votre budget ne compte que votre quote-part des dépenses communes. Les virements Tricount servent à régler la différence : ils sont exclus des revenus et des dépenses, et contrôlés ici.</p>
@@ -2255,7 +2443,7 @@ $('#btnMenu').onclick = async () => {
     ${S.raw.length ? '<button class="btn-ghost w-full justify-center" id="m6">📋 Copier le diagnostic (pour signaler un problème)</button>' : ''}
     <button class="btn-ghost w-full justify-center !text-red-600" id="m3">🗑 Tout effacer</button>
     <button class="btn-ghost w-full justify-center" id="m4">Fermer</button>
-    <p class="text-[11px] text-slate-400 text-center">Version du 16/11 11:30</p></div></div>`;
+    <p class="text-[11px] text-slate-400 text-center">Version du 16/11 16:00</p></div></div>`;
   const close = () => $('#modal-root').innerHTML = '';
   $('#mbg').onclick = e => { if (e.target.id === 'mbg') close(); };
   $('#m1').onclick = () => { close(); goTo('accueil'); };
