@@ -1655,7 +1655,7 @@ function removeDoc(i) {
 }
 
 /* ---------- Analyse intelligente (IA via le relais Cloudflare) ---------- */
-const AI_URL = '__AI_URL__';
+const AI_URL = 'https://audit-budget-ia.camil-bounader.workers.dev';
 const aiAvailable = () => /^https:\/\//.test(AI_URL) && (/github\.io$/.test(location.hostname) || /^localhost$|^127\./.test(location.hostname));
 // Retire ce qui identifie directement une personne ou un compte avant tout envoi
 function anonymize(t) {
