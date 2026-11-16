@@ -274,6 +274,9 @@ function categorizeBase(tx, ctx = {}) {
   if (o && OVR[o]) return { ...tx, ...OVR[o], merchant: key, manuel: true };
   for (const a of ctx.colocAliases || []) if (a && has(n, a))
     return { ...tx, cat: tx.amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage', merchant: a };
+  if (/ (VENTE BOURSE|VENTE EN BOURSE|VENTE COMPTANT|COUPONS?|PAIEMENT DE COUPON|DIVIDENDES?|INTERETS CREDITEURS|INTERETS ANNUELS|REMBOURSEMENT TITRES) /.test(n)) return { ...tx, cat: tx.amount > 0 ? 'interne' : 'epargne', grp: tx.amount > 0 ? 'interne' : 'epargne', merchant: key };
+  if (/ (ACHAT BOURSE|ACHAT EN BOURSE|ACHAT COMPTANT|SOUSCRIPTION) /.test(n) && tx.amount < 0) return { ...tx, cat: 'epargne', grp: 'epargne', merchant: key };
+  if (tx.amount > 0 && / (PAYPAL|REMBOURSEMENT|AVOIR|REMISE|ANNULATION|RETOUR) /.test(n) && !/ (SALAIRE|PAIE|PAYE|PENSION|CAF) /.test(n)) return { ...tx, cat: 'remboursement', grp: 'interne', merchant: key };
   if (/ (CPTE A CPTE|COMPTE A COMPTE|VIR(EMENT)? INTERNE|DE VOTRE COMPTE|VERS VOTRE COMPTE|ENTRE VOS COMPTES) /.test(n) || / EN VOTRE FAVEUR DU \d{5,} /.test(n) || / EMIS VERS \d{5,} /.test(n)) return { ...tx, cat: 'interne', grp: 'interne', merchant: key };
   if (tx.amount < 0 && !tx.encours && CARTE_TOTAL.test(n)) return { ...tx, cat: 'carte_total', grp: ctx.cardDetail ? 'interne' : 'courant', merchant: 'TOTAL CARTE' };
   const rules = tx.amount > 0 ? CREDIT_RULES.map(r => ({ ...r, grp: r.cat === 'epargne' ? 'epargne' : 'revenu' })) : RULES;
@@ -611,10 +614,10 @@ function infer(rawTxs, ctx = {}) {
   if (txs.some(t => t.amount > 0 && /FRANCE TRAVAIL|POLE EMPLOI/.test(normText(t.label))) && !sal.length) I.statut = 'sans_emploi';
   // Autres revenus réguliers : prestations, indemnités, et tout crédit qui revient au moins un mois sur deux (montant variable accepté)
   const nbCal = new Set(txs.map(t => monthKey(t.date))).size, src = {};
-  for (const t of txs) if (t.amount > 0 && t.grp === 'revenu' && ['prestations', 'indemnites', 'autre_credit'].includes(t.cat) && !/ (CPAM|AMELI|REMBOURSEMENT|AVOIR|REMISE) /.test(normText(t.label))) {
+  for (const t of txs) if (t.amount > 0 && t.grp === 'revenu' && ['prestations', 'indemnites', 'pension'].includes(t.cat) && !/ (CPAM|AMELI|REMBOURSEMENT|AVOIR|REMISE) /.test(normText(t.label))) {
     const k = t.cat === 'autre_credit' ? opKey(t.label) : t.merchant; (src[k] = src[k] || { cat: t.cat, l: [] }).l.push(t);
   }
-  const reg = Object.entries(src).filter(([, x]) => x.cat !== 'autre_credit' || (new Set(x.l.map(t => monthKey(t.date))).size >= Math.max(2, Math.ceil(nbCal / 2)) && x.l.every(t => t.amount < 1500)));
+  const reg = Object.entries(src).filter(([, x]) => x.l.length >= 2 || x.cat === 'pension');
   if (reg.length) {
     const fin = Math.max(...txs.map(t => +t.date));
     // une même source peut mêler un ancien salaire (gros montants, arrêtés) et des indemnités (petits montants) : on les sépare
@@ -1133,7 +1136,7 @@ const fresh = () => ({
   screen: 'accueil', device: detectDevice(), banques: [], tutoBank: null,
   profile: { profilType: 'jeune_actif', adultes: 1, enfantsMoins14: 0, enfantsPlus14: 0, logement: 'locataire', statut: '', horizon: '', tolerance: '', projets: [],
     colocNb: 2, colocPart: '', colocAliases: 'TRICOUNT', externes: [] },
-  docs: [], raw: [], flags: {}, shared: {}, overrides: {}, placements: {}, aiOn: null, aiCats: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
+  docs: [], raw: [], flags: {}, shared: {}, overrides: {}, incEx: {}, placements: {}, aiOn: null, aiCats: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
   inv: { initial: 0, mensuel: null, horizon: null, fraisEtf: 0.2, fraisFonds: 1.8 }
 });
 let S = fresh();
@@ -1360,7 +1363,7 @@ function applyInferences() {
   const I = S.inferred = E.infer(S.raw, catCtx()), p = S.profile;
   const paieNets = S.docs.filter(d => d.kind === 'paie' && d.net).map(d => d.net);
   if (!p.net1) p.net1 = paieNets.length ? Math.round(avg(paieNets) * 100) / 100 : (I.salaire || I.pension || '');
-  if (!p.autresRevenus && I.autresRevenus) p.autresRevenus = I.autresRevenus;
+  if (I.autresRevenusDetail) p.autresRevenus = Math.round(I.autresRevenusDetail.filter(y => !y.arretee && !S.incEx[y.nom]).reduce((x, y) => x + y.moyenne, 0) * 100) / 100 || '';
   if (!p.statut && I.statut) p.statut = I.statut;
   if (I.logement) p.logement = I.logement;
   if (I.coloc) { p.profilType = 'colocation'; p.colocAliases = I.coloc.alias; }
@@ -1376,7 +1379,7 @@ function renderCompris() {
     <div class="space-y-3 mt-6">
       ${row('📅', 'Période analysée', `${E.months(S.raw)} mois${cov.debut ? ` (${moisLabel(cov.debut)} → ${moisLabel(cov.fin)})` : ''} · ${S.raw.length} opérations`, '', '')}
       ${row('💶', 'Revenu net mensuel', p.net1 ? eur(+p.net1, 0) + (I.salaireJour ? ` <span class="text-sm font-normal text-slate-500">versé vers le ${I.salaireJour} du mois</span>` : '') : 'Non détecté', `<input type="number" inputmode="decimal" data-k="net1" value="${esc(p.net1)}" class="inp-sm w-36"> €/mois`, S.docs.some(d => d.kind === 'paie' && d.net) ? 'fiche de paie' : I.salaire ? 'relevés' : I.pension ? 'pension' : '')}
-      ${I.autresRevenus ? row('🤝', 'Autres revenus réguliers (moyenne mensuelle)', eur(I.autresRevenus, 0) + '/mois' + (I.autresRevenusDetail ? `<span class="block text-sm font-normal text-slate-500">${I.autresRevenusDetail.map(x => `${esc(x.nom)} ≈ ${eur(x.moyenne, 0)} (${x.n} versements${x.debut ? `, ${MOIS[x.debut.getUTCMonth()]} → ${MOIS[x.fin.getUTCMonth()]} ${x.fin.getUTCFullYear()}` : ''})${x.arretee ? ' <b class="text-amber-700">arrêté depuis, non compté</b>' : ''}`).join('<br>')}</span>` : ''), `<input type="number" inputmode="decimal" data-k="autresRevenus" value="${esc(p.autresRevenus)}" class="inp-sm w-36"> €/mois`, 'relevés') : ''}
+      ${I.autresRevenus ? row('🤝', 'Autres revenus réguliers (moyenne mensuelle)', eur(I.autresRevenus, 0) + '/mois' + (I.autresRevenusDetail ? `<span class="block text-sm font-normal text-slate-500">${I.autresRevenusDetail.map((x, i) => `<label class="flex items-start gap-2 mt-1"><input type="checkbox" data-incsrc="${i}" ${x.arretee || S.incEx[x.nom] ? '' : 'checked'} class="w-4 h-4 mt-0.5"><span>${esc(x.nom)} ≈ ${eur(x.moyenne, 0)}/mois (${x.n} versements${x.debut ? `, ${MOIS[x.debut.getUTCMonth()]} → ${MOIS[x.fin.getUTCMonth()]} ${x.fin.getUTCFullYear()}` : ''})${x.arretee ? ' <b class="text-amber-700">arrêté depuis</b>' : ''}</span></label>`).join('') + '<span class="block text-xs text-slate-400 mt-1">Décochez ce qui n\'est pas un revenu à vous (remboursements, virements de vos comptes…).</span>'}</span>` : ''), `<input type="number" inputmode="decimal" data-k="autresRevenus" value="${esc(p.autresRevenus)}" class="inp-sm w-36"> €/mois`, 'relevés') : ''}
       ${row('🏠', 'Logement', { locataire: 'Locataire', proprietaire_credit: 'Propriétaire avec crédit', proprietaire: 'Propriétaire', heberge: 'Hébergé' }[p.logement], `<select data-k="logement" class="inp-sm">${[['locataire', 'Locataire'], ['proprietaire_credit', 'Propriétaire avec crédit'], ['proprietaire', 'Propriétaire sans crédit'], ['heberge', 'Hébergé']].map(([v, l]) => `<option value="${v}" ${p.logement === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`, I.logement ? 'relevés' : '')}
       ${I.coloc ? row('👥', 'Colocation probable', `${I.coloc.nb} virements « ${esc(I.coloc.alias)} » repérés`, `<label class="flex items-center gap-2 text-sm"><input type="checkbox" id="cbColoc" ${isColoc() ? 'checked' : ''} class="w-4 h-4"> Oui, je suis en colocation</label>`, 'relevés') : ''}
       ${(() => { const dc = E.detectCredits(catAll()); return dc.length ? row('🏷️', 'Crédits repérés sur vos relevés', dc.map(c => `${esc(c.organisme)} ${eur(c.mensualite, 0)}/mois`).join(' · '), '<span class="text-xs text-slate-500">Vous pourrez les compléter à l\'étape « Vos crédits ».</span>', 'relevés') : ''; })()}
@@ -1483,6 +1486,7 @@ function bindWizard() {
   v.querySelectorAll('[data-crdel]').forEach(b => b.onclick = () => { S.credits.splice(+b.dataset.crdel, 1); renderWizard(); });
   const ca = $('#crAdd'); if (ca) ca.onclick = () => { S.credits.push({ type: 'conso', organisme: '', mensualite: '', crd: '', taux: '', fin: '', assurance: '', source: 'manuel', surReleves: false }); renderWizard(); };
   const ea = $('#extAdd'); if (ea) ea.onclick = () => { S.profile.externes.push({ label: '', cat: 'energie', montant: 0 }); renderWizard(); };
+  v.querySelectorAll('[data-incsrc]').forEach(el => el.onchange = () => { const D = S.inferred.autresRevenusDetail || [], x = D[+el.dataset.incsrc]; S.incEx[x.nom] = !el.checked; if (x.arretee && el.checked) { x.arretee = false; S.incEx[x.nom] = false; } S.profile.autresRevenus = Math.round(D.filter(y => !y.arretee && !S.incEx[y.nom]).reduce((s, y) => s + y.moyenne, 0) * 100) / 100; renderWizard(); });
   const cb = $('#cbColoc'); if (cb) cb.onchange = () => { S.profile.profilType = cb.checked ? 'colocation' : 'jeune_actif'; S.profile.adultes = 1; };
   const at = $('#aiToggle'); if (at) at.onchange = async () => { if (at.checked) { S.aiOn = null; if (!(await ensureAiConsent())) at.checked = false; } else S.aiOn = false; renderWizard(); };
   const fi = $('#fileInput'); if (fi) fi.onchange = () => { handleFiles([...fi.files]); fi.value = ''; };
