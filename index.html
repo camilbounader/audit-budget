@@ -420,7 +420,7 @@ function parseAvisImposition(text) {
 }
 function parseFichePaie(text) {
   const L = toLines(text), o = { min: 50, max: 100000 };
-  const verse = findLabeled(L, [{ inc: 'NETPAYE' }, { inc: 'NETVERSE' }, { inc: 'NETAVERSER' }, { inc: 'NETAPAYERAUSALARIE', exc: ['AVANTIMPOT'] }, { inc: 'NETAPAYER', exc: ['AVANTIMPOT', 'AVANTPRELEVEMENT'] }], o);
+  const verse = findLabeled(L, [{ inc: 'NETPAYE' }, { inc: 'NETPAVE' }, { inc: 'NETPAY', exc: ['AVANT'] }, { inc: 'NETAPAV', exc: ['AVANT'] }, { inc: 'NETVERSE' }, { inc: 'NETAVERSER' }, { inc: 'NETAPAYERAUSALARIE', exc: ['AVANTIMPOT'] }, { inc: 'NETAPAYER', exc: ['AVANTIMPOT', 'AVANTPRELEVEMENT'] }], o);
   const avant = findLabeled(L, [{ inc: 'NETAPAYERAVANTIMPOT' }, { inc: 'NETAPAYERAVANTPRELEVEMENT' }, { inc: 'NETAVANTIMPOT' }], o);
   const social = findLabeled(L, [{ inc: 'MONTANTNETSOCIAL' }], o);
   const imposable = findLabeled(L, [{ inc: 'NETIMPOSABLE', exc: ['CUMUL'] }], o);
@@ -511,7 +511,7 @@ function parseStatementLines(lines, source) { return parseStatementRows(lines.ma
 function classifyPdf(lines) {
   const head = compactUp(lines.slice(0, 25).join(' ')), all = compactUp(lines.join(' '));
   if (all.includes('REVENUFISCALDEREFERENCE')) return 'avis';
-  if (/BULLETINDE(PAIE|SALAIRE)|NETAPAYER|NETPAYE|SALAIREDEBASE|NETSOCIAL/.test(all) && !/RELEVEDECOMPTE|RELEVEDESOPERATIONS/.test(head)) return 'paie';
+  if (/BULLETIN|NETAPAY|NETAPAV|NETPAY|NETPAV|NETAVERSER|SALAIREDEBASE|NETSOCIAL|NETIMPOSABLE|COTISATIONSSALARIALES|SECURITESOCIALE/.test(all) && !/RELEVEDECOMPTE|RELEVEDESOPERATIONS/.test(head)) return 'paie';
   const credSig = ['TABLEAUDAMORTISSEMENT', 'ECHEANCIER', 'OFFREDEPRET', 'OFFREDECREDIT', 'CAPITALRESTANTDU', 'CREDITRENOUVELABLE', 'TAUXANNUELEFFECTIFGLOBAL', 'TAEG', 'MONTANTDUPRET', 'MONTANTDUCREDIT', 'CONTRATDECREDIT', 'ASSURANCEEMPRUNTEUR', 'AMORTISSEMENT'].filter(k => all.includes(k)).length;
   if (credSig >= 2 && !/RELEVEDECOMPTECOURANT|COMPTECOURANT|COMPTEDEDEPOT/.test(head)) return 'credit';
   if (/LIVRETA|LIVRETBLEU|LDDS|DEVELOPPEMENTDURABLE|LIVRETDEPARGNEPOPULAIRE|COMPTEEPARGNE|PLANDEPARGNEENACTIONS|ASSURANCEVIE|LIVRETJEUNE|PLANDEPARGNELOGEMENT/.test(head) && !/COMPTECOURANT|COMPTEDEDEPOT|COMPTECHEQUE/.test(head)) return 'epargne';
@@ -625,13 +625,21 @@ function parseCreditDoc(lines, today = new Date()) {
     if (fm) r.fin = parseDate(fm[1].replace(/\./g, '/'));
   }
   const dur = all.match(/dur[ée]e\D{0,30}?(\d{1,3})\s*mois/i); if (dur) r.dureeMois = +dur[1];
+  const C = compactUp(all);
+  r.assuranceResiliee = /(RESILIATION|RESILIE|ANNULATION|ANNULE|SUPPRESSION|SUPPRIME|RENONCIATION|RETRAIT)\w{0,40}ASSURANCE|ASSURANCE\w{0,60}(RESILIE|ANNULE|SUPPRIME|RESILIATION|ANNULATION|SUPPRESSION)/.test(C);
+  const ORG = ['CREDIPAR', 'DIAC', 'MOBILIZE', 'STELLANTIS', 'PSABANQUE', 'TOYOTA', 'VOLKSWAGEN', 'BMWFINANCE', 'COFIDIS', 'CETELEM', 'SOFINCO', 'FRANFINANCE', 'ONEY', 'FLOA', 'YOUNITED', 'CACONSUMER', 'CREDITAGRICOLE', 'LCL', 'CAISSEDEPARGNE', 'BANQUEPOPULAIRE', 'BNPPARIBAS', 'SOCIETEGENERALE', 'CREDITMUTUEL', 'CIC', 'LABANQUEPOSTALE', 'BOURSOBANK'];
+  r.organismeCompact = ORG.find(o => C.includes(o)) || null;
   r.found = ['montant', 'taux', 'mensualite', 'crd', 'fin'].filter(k => r[k] != null).length;
   return r;
 }
 // Associe un crédit lu dans un document à une mensualité déjà vue sur les relevés
 function matchCredit(list, c) {
-  if (!c.mensualite) return list.find(x => x.source === 'releve' && x.type === c.type && !x.doc) || null;
-  return list.find(x => x.mensualite && Math.abs(x.mensualite - c.mensualite) <= Math.max(2, c.mensualite * 0.05)) || null;
+  const org = c.organismeCompact, byOrg = org ? list.filter(x => compactUp((x.organisme || '') + ' ' + (x.libelle || '')).includes(org)) : [];
+  if (byOrg.length === 1) return byOrg[0];
+  if (c.mensualite) { const m = list.find(x => x.mensualite && Math.abs(x.mensualite - c.mensualite) <= Math.max(2, c.mensualite * 0.05)); if (m) return m; }
+  const sameType = list.filter(x => x.type === c.type && c.type !== 'autre'); if (sameType.length === 1) return sameType[0];
+  if (list.length === 1 && (c.type === 'autre' || !c.mensualite)) return list[0];
+  return null;
 }
 function moisEntre(a, b) { return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth(); }
 function analyseCredits(credits, d, today = new Date()) {
@@ -647,7 +655,8 @@ function analyseCredits(credits, d, today = new Date()) {
     if (false) A.push({ prio: 2, titre: '', texte: `Depuis la loi Lemoine (2022), elle est résiliable à tout moment, sans frais, pour un contrat à garanties équivalentes.${c.assurance ? ` Vous payez ${Math.round(c.assurance)} €/mois, soit ${Math.round(c.assurance * 12)} €/an.` : ''} Une délégation d'assurance coûte souvent bien moins cher que le contrat de la banque, surtout pour les emprunteurs jeunes et non-fumeurs.` });
     if (restant != null && restant <= 24 && c.mensualite) A.push({ prio: 3, titre: `${nom} : fin dans ${restant} mois`, texte: `À partir de ${fin.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}, ${Math.round(c.mensualite)} €/mois se libèrent : programmez dès maintenant de les verser sur votre épargne pour ne pas les « absorber » dans les dépenses.` });
   }
-  const immo = credits.filter(c => c.type === 'immo');
+  const immo = credits.filter(c => c.type === 'immo' && !c.assuranceResiliee);
+  for (const c of credits.filter(c => c.assuranceResiliee)) A.push({ prio: 3, titre: `Assurance emprunteur résiliée (${c.organisme || CREDIT_TYPES[c.type]})`, texte: 'Pensez à vérifier que la mensualité prélevée a bien baissé, et que vos proches restent protégés en cas de décès (prévoyance, épargne disponible).' });
   if (immo.length) {
     const ass = immo.reduce((s, c) => s + (+c.assurance || 0), 0);
     A.push({ prio: 2, titre: `Assurance emprunteur : à faire comparer${immo.length > 1 ? ` (${immo.length} prêts immobiliers)` : ''}`, texte: `Depuis la loi Lemoine (2022), elle est résiliable à tout moment, sans frais, pour un contrat à garanties équivalentes${immo.length > 1 ? ', prêt par prêt' : ''}.${ass ? ` Vous payez ${Math.round(ass)} €/mois au total, soit ${Math.round(ass * 12)} €/an.` : ''} Une délégation d'assurance coûte souvent bien moins cher que le contrat de la banque, surtout pour les emprunteurs jeunes et non-fumeurs.` });
@@ -1186,7 +1195,8 @@ function docItem(d, i) {
   const firstOfAccount = pl && S.docs.findIndex(x => x.kind === 'placement' && x.compte === d.compte) === i;
   const txt = DOC_TEXT.get(d.uid);
   return `<li class="card !p-3 text-sm ${d.kind === 'inconnu' ? '!border-amber-300' : ''}"><div class="flex items-start gap-3"><span class="text-lg">${ico}</span><span class="flex-1 min-w-0"><span class="block font-medium truncate">${esc(d.name)}</span><span class="block text-xs ${tone}">${d.detail}</span>${(d.warnings || []).map(w => `<span class="block text-xs text-amber-700">⚠ ${esc(w)}</span>`).join('')}</span><button type="button" data-deldoc="${i}" class="text-slate-400 hover:text-red-600 px-1">✕</button></div>
-    ${txt && (d.kind === 'inconnu' || !d.ok || d.choisi) ? `<div class="mt-2 flex items-center gap-2"><span class="text-xs text-slate-500 whitespace-nowrap">${d.kind === 'inconnu' ? 'C\'est :' : 'Mal reconnu ? C\'est :'}</span><select data-reclass="${i}" class="inp-sm flex-1 min-w-0">${RECLASS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>` : ''}
+    ${txt && (d.kind === 'inconnu' || !d.ok || d.choisi) ? `<div class="mt-2 flex items-center gap-2"><span class="text-xs text-slate-500 whitespace-nowrap">${d.kind === 'inconnu' ? 'C\'est :' : 'Mal reconnu ? C\'est :'}</span><select data-reclass="${i}" class="inp-sm flex-1 min-w-0">${RECLASS.map(([v, l]) => `<option value="${v}" ${d.choix === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : ''}
+    ${d.kind === 'paie' && !d.net ? `<div class="mt-2 flex items-center gap-2"><span class="text-xs text-slate-500">Net payé lu sur la fiche :</span><input type="number" inputmode="decimal" data-docnet="${i}" placeholder="€" class="inp-sm w-28"><span class="text-[11px] text-slate-400">(facultatif)</span></div>` : ''}
     ${firstOfAccount ? `<div class="mt-2 flex items-center gap-2"><span class="text-xs text-slate-500 whitespace-nowrap">Le compte ${esc(d.compte)} est :</span><select data-pltype="${esc(d.compte)}" class="inp-sm flex-1 min-w-0"><option value="">— choisir —</option>${PLACEMENT_TYPES.map(([v, l]) => `<option value="${v}" ${pl.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>${!pl.type ? '<p class="text-[11px] text-amber-700 mt-1">Indiquez le type de ce compte pour que sa valeur et vos versements soient pris en compte.</p>' : ''}` : ''}
     ${txt ? `<details class="mt-2"><summary class="text-[11px] text-slate-400">Voir le texte lu</summary><pre class="mt-1 p-2 bg-slate-900 text-slate-100 rounded-lg max-h-48 overflow-auto whitespace-pre-wrap text-[10px]">${esc(txt.lines.join('\n').slice(0, 4000))}</pre></details>` : ''}</li>`;
 }
@@ -1286,7 +1296,7 @@ function renderEpargne() {
 /* ---------- Crédits : documents + détection + saisie manuelle ---------- */
 function mergeCredit(list, c) {
   const m = E.matchCredit(list, c);
-  if (m) { for (const k of ['mensualite', 'crd', 'taux', 'fin', 'assurance']) if (c[k] !== '' && c[k] != null) m[k] = c[k]; if (c.type !== 'autre') m.type = c.type; m.docName = c.docName; m.source = m.source === 'releve' ? 'releve+document' : m.source; }
+  if (m) { for (const k of ['mensualite', 'crd', 'taux', 'fin', 'assurance']) if (c[k] !== '' && c[k] != null && !(k === 'mensualite' && m.source !== 'manuel' && m.mensualite)) m[k] = c[k]; if (c.type !== 'autre') m.type = c.type; if (c.assuranceResiliee) m.assuranceResiliee = true; if (!m.organisme && c.organisme) m.organisme = c.organisme; m.docName = c.docName; m.source = m.source === 'releve' ? 'releve+document' : m.source; }
   else list.push({ ...c });
 }
 function initCredits() {
@@ -1307,7 +1317,8 @@ function renderCredits() {
         ${f(i, 'taux', 'Taux (%)', 'facultatif')}${f(i, 'fin', 'Fin du crédit', '', 'month')}
         ${c.type === 'immo' ? f(i, 'assurance', 'Assurance emprunteur (€/mois)', 'facultatif', 'number', 'col-span-2') : ''}
       </div>
-      <label class="flex items-center gap-2 text-sm mt-3"><input type="checkbox" data-crsur="${i}" ${c.surReleves ? 'checked' : ''} class="w-4 h-4"> Prélevé sur un compte dont j'ai importé les relevés</label>
+      <label class="flex items-center gap-2 text-sm mt-3"><input type="checkbox" data-crres="${i}" ${c.assuranceResiliee ? 'checked' : ''} class="w-4 h-4"> Assurance emprunteur / décès résiliée${c.assuranceResiliee && c.docName ? ' <span class="text-[11px] text-blue-700">(lu dans un document)</span>' : ''}</label>
+      <label class="flex items-center gap-2 text-sm mt-2"><input type="checkbox" data-crsur="${i}" ${c.surReleves ? 'checked' : ''} class="w-4 h-4"> Prélevé sur un compte dont j'ai importé les relevés</label>
       ${!c.surReleves ? '<p class="text-[11px] text-slate-400 mt-1">Décoché : la mensualité sera ajoutée à vos charges.</p>' : ''}
     </div>`).join('')}</div>
     <button type="button" id="crAdd" class="btn-ghost w-full justify-center mt-3">+ Ajouter un crédit à la main</button>
@@ -1337,9 +1348,11 @@ function bindWizard() {
   v.querySelectorAll('[data-extdel]').forEach(b => b.onclick = () => { S.profile.externes.splice(+b.dataset.extdel, 1); renderWizard(); });
   v.querySelectorAll('[data-deldoc]').forEach(b => b.onclick = () => removeDoc(+b.dataset.deldoc));
   v.querySelectorAll('[data-ovr]').forEach(el => el.onchange = () => { const k = el.dataset.ovr; if (el.value) S.overrides[k] = el.value; else delete S.overrides[k]; if (el.value === 'coloc' && !isColoc()) { S.profile.profilType = 'colocation'; S.profile.adultes = 1; toast('Colocation activée : vous préciserez le partage plus loin.'); } });
+  v.querySelectorAll('[data-docnet]').forEach(el => el.onchange = () => { const d = S.docs[+el.dataset.docnet]; d.net = +el.value || null; d.ok = !!d.net; d.detail = d.net ? `Fiche de paie : net payé ${eur(d.net, 2)} (saisi)` : d.detail; const nets = S.docs.filter(x => x.kind === 'paie' && x.net).map(x => x.net); if (nets.length) S.profile.net1 = Math.round(avg(nets) * 100) / 100; S.applied = false; renderWizard(); });
   v.querySelectorAll('[data-reclass]').forEach(el => el.onchange = () => { if (el.value) reclassify(+el.dataset.reclass, el.value); });
   v.querySelectorAll('[data-pltype]').forEach(el => el.onchange = () => { S.placements[el.dataset.pltype].type = el.value; applyPlacements(); renderWizard(); });
   v.querySelectorAll('[data-cr]').forEach(el => el.addEventListener('change', () => { const c = S.credits[+el.dataset.cr], k = el.dataset.f; c[k] = el.type === 'number' ? (el.value === '' ? '' : +el.value) : el.value; if (k === 'type') renderWizard(); }));
+  v.querySelectorAll('[data-crres]').forEach(el => el.onchange = () => { const c = S.credits[+el.dataset.crres]; c.assuranceResiliee = el.checked; if (el.checked) c.assurance = 0; renderWizard(); });
   v.querySelectorAll('[data-crsur]').forEach(el => el.onchange = () => { S.credits[+el.dataset.crsur].surReleves = el.checked; renderWizard(); });
   v.querySelectorAll('[data-crdel]').forEach(b => b.onclick = () => { S.credits.splice(+b.dataset.crdel, 1); renderWizard(); });
   const ca = $('#crAdd'); if (ca) ca.onclick = () => { S.credits.push({ type: 'conso', organisme: '', mensualite: '', crd: '', taux: '', fin: '', assurance: '', source: 'manuel', surReleves: false }); renderWizard(); };
@@ -1348,6 +1361,7 @@ function bindWizard() {
   const fi = $('#fileInput'); if (fi) fi.onchange = () => { handleFiles([...fi.files]); fi.value = ''; };
   const dz = $('#dropZone');
   if (dz) { dz.ondragover = e => { e.preventDefault(); dz.classList.add('drop-hover'); }; dz.ondragleave = () => dz.classList.remove('drop-hover'); dz.ondrop = e => { e.preventDefault(); dz.classList.remove('drop-hover'); handleFiles([...e.dataTransfer.files]); }; }
+  if (docMsgLater) { docMsg(docMsgLater, 'emerald'); docMsgLater = ''; }
   const pr = $('#wPrev'); if (pr) pr.onclick = () => go(-1);
   const nx = $('#wNext'); if (nx) nx.onclick = () => go(1);
   const st = $('#btnStart'); if (st) st.onclick = () => { if (S.raw.length) { S = fresh(); } S.screen = 'banque'; render(); };
@@ -1394,12 +1408,29 @@ async function askOcr(name) {
   ocrOk = !!(await modal({ title: '📷 Document scanné', body: `« ${esc(name)} » est une image : il n'y a pas de texte à lire directement. L'app peut le <b>déchiffrer sur votre appareil</b> (reconnaissance de texte). La première fois, elle télécharge l'outil de lecture (environ 15 Mo, sans rien envoyer de vos documents) ; comptez 20 à 60 secondes par page.`, ok: 'Lire le document', cancel: 'Non merci' }));
   return ocrOk;
 }
+// Agrandit, passe en niveaux de gris et renforce le contraste : indispensable pour les scans pâles ou flous
+async function prepImage(src) {
+  let w, h, draw;
+  if (src instanceof HTMLCanvasElement) { w = src.width; h = src.height; draw = src; }
+  else { const bmp = await createImageBitmap(src); w = bmp.width; h = bmp.height; draw = bmp; }
+  const k = Math.min(3, Math.max(1, 2400 / Math.max(w, 1)));
+  const c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+  const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(draw, 0, 0, c.width, c.height);
+  const im = ctx.getImageData(0, 0, c.width, c.height), d = im.data, hist = new Array(256).fill(0);
+  for (let i = 0; i < d.length; i += 4) { const g = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0; d[i] = g; hist[g]++; }
+  const n = d.length / 4; let lo = 0, hi = 255, acc = 0;
+  for (; lo < 255 && (acc += hist[lo]) < n * 0.01; lo++); acc = 0;
+  for (; hi > 0 && (acc += hist[hi]) < n * 0.01; hi--);
+  const span = Math.max(1, hi - lo);
+  for (let i = 0; i < d.length; i += 4) { const v = Math.max(0, Math.min(255, (d[i] - lo) * 255 / span)); d[i] = d[i + 1] = d[i + 2] = v; }
+  ctx.putImageData(im, 0, 0); return c;
+}
 async function ocrImages(images, name) {
   const T = await loadTesseract(), w = await T.createWorker('fra'), lines = [];
   try {
     for (let i = 0; i < images.length; i++) {
       docMsg(`🔎 Déchiffrage de ${esc(name)}${images.length > 1 ? ` (page ${i + 1}/${images.length})` : ''}… patientez`, 'blue');
-      const { data } = await w.recognize(images[i]);
+      const { data } = await w.recognize(await prepImage(images[i]));
       lines.push(...String(data.text || '').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean));
     }
   } finally { try { await w.terminate(); } catch { } }
@@ -1424,7 +1455,7 @@ async function pdfToRows(file) {
   if (rows.map(r => r.text).join('').replace(/\s/g, '').length < 30 && await askOcr(file.name)) {
     const imgs = [];
     for (let i = 1; i <= Math.min(doc.numPages, 4); i++) {
-      const page = await doc.getPage(i), vp = page.getViewport({ scale: 2 }), c = document.createElement('canvas');
+      const page = await doc.getPage(i), vp = page.getViewport({ scale: 3 }), c = document.createElement('canvas');
       c.width = vp.width; c.height = vp.height; await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise; imgs.push(c);
     }
     const lines = await ocrImages(imgs, file.name);
@@ -1445,6 +1476,7 @@ function addTx(list, uid) {
 const SAV_FIELD = { livretA: 'livretA', ldds: 'ldds', lep: 'lep', livretsAutres: 'livretsAutres', pea: 'peaValeur', av: 'avMontant', per: 'perMontant', cto: 'ctoMontant' };
 const SAV_LABEL = { livretA: 'Livret A', ldds: 'LDDS', lep: 'LEP', livretsAutres: 'Livret', pea: 'PEA', av: 'Assurance-vie', per: 'PER', cto: 'Compte-titres' };
 const docMsg = (t, tone = 'slate') => { const m = $('#docMsg'); if (m) m.innerHTML = `<span class="text-${tone}-700">${t}</span>`; };
+let docMsgLater = '';
 const DOC_TEXT = new Map(); // texte lu des PDF, gardé en mémoire seulement (jamais enregistré)
 let docSeq = 0;
 // Lit un PDF avec le lecteur correspondant au type (reconnu ou choisi par l'utilisateur)
@@ -1454,10 +1486,12 @@ function applyPdf(doc, kind, rows, lines, sub) {
   else if (kind === 'paie') { const r = E.parseFichePaie(lines); doc.net = r.net; doc.ok = !!r.net; doc.detail = r.net ? `Fiche de paie : net versé ${eur(r.net, 2)}` : 'Fiche de paie : « net payé » introuvable'; S.applied = false; }
   else if (kind === 'credit') {
     const c = E.parseCreditDoc(lines);
-    const item = { type: c.type, organisme: '', mensualite: c.mensualite ? Math.round(c.mensualite * 100) / 100 : '', crd: c.crd ?? '', taux: c.taux ?? '', fin: c.fin ? c.fin.toISOString().slice(0, 7) : '', assurance: c.assurance ?? '', source: 'document', surReleves: false, docName: doc.name };
+    const orgName = c.organismeCompact ? c.organismeCompact.charAt(0) + c.organismeCompact.slice(1).toLowerCase() : '';
+    const item = { type: c.type, organisme: orgName, organismeCompact: c.organismeCompact, mensualite: c.mensualite ? Math.round(c.mensualite * 100) / 100 : '', crd: c.crd ?? '', taux: c.taux ?? '', fin: c.fin ? c.fin.toISOString().slice(0, 7) : '', assurance: c.assuranceResiliee ? 0 : (c.assurance ?? ''), assuranceResiliee: c.assuranceResiliee, source: 'document', surReleves: false, docName: doc.name, docUid: doc.uid };
+    S.docCredits = S.docCredits.filter(x => x.docUid !== doc.uid); S.credits = S.credits.filter(x => !(x.source === 'document' && x.docUid === doc.uid));
     S.docCredits.push(item); if (S.creditsInit) mergeCredit(S.credits, item);
-    const bits = [item.mensualite && `${eur(+item.mensualite, 0)}/mois`, item.crd !== '' && `reste ${eur(+item.crd, 0)}`, item.taux !== '' && `${item.taux} %`, item.fin && `fin ${item.fin.split('-').reverse().join('/')}`].filter(Boolean);
-    doc.ok = bits.length > 0; doc.detail = `${E.CREDIT_TYPES[c.type]}${bits.length ? ' : ' + bits.join(' · ') : ' : aucune donnée lue, à compléter à l\'étape « Vos crédits »'}`;
+    const bits = [item.mensualite && `${eur(+item.mensualite, 0)}/mois`, item.crd !== '' && `reste ${eur(+item.crd, 0)}`, item.taux !== '' && `${item.taux} %`, item.fin && `fin ${item.fin.split('-').reverse().join('/')}`, c.assuranceResiliee && 'assurance résiliée'].filter(Boolean);
+    doc.ok = bits.length > 0; doc.detail = `${E.CREDIT_TYPES[c.type]}${orgName ? ' (' + esc(orgName) + ')' : ''}${bits.length ? ' : ' + bits.join(' · ') : ' : aucun chiffre lu, à compléter à l\'étape « Vos crédits »'}`;
   }
   else if (kind === 'epargne') {
     const r = E.parseSavingsStatement(lines), type = sub || r.type;
@@ -1531,7 +1565,8 @@ async function handleFiles(files) {
 function reclassify(i, val) {
   const doc = S.docs[i], t = DOC_TEXT.get(doc.uid); if (!t) return toast('Rechargez ce document pour le relire.', 'amber');
   S.raw = S.raw.filter(x => x.docUid !== doc.uid);
-  const [kind, sub] = val.split(':'); applyPdf(doc, kind, t.rows, t.lines, sub || 'choisi'); renderWizard();
+  const [kind, sub] = val.split(':'); doc.choix = val; applyPdf(doc, kind, t.rows, t.lines, sub || 'choisi'); if (!sub && kind !== 'releve') doc.choisi = true;
+  docMsgLater = `✅ « ${esc(doc.name)} » relu comme : ${esc((RECLASS.find(r => r[0] === val) || [, val])[1])}.`; renderWizard();
 }
 function removeDoc(i) {
   const d = S.docs[i]; S.raw = S.raw.filter(t => d.uid ? t.docUid !== d.uid : t.docId !== i); DOC_TEXT.delete(d.uid);
