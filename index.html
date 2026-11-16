@@ -96,6 +96,7 @@
   </nav>
 </header>
 <main class="max-w-5xl mx-auto px-4 py-6 pb-28">
+  <div id="officialBanner" class="hidden no-print mb-4 text-sm bg-blue-50 border border-blue-100 text-blue-900 rounded-2xl p-3">📌 Adresse officielle de l'app, à utiliser et à partager : <a href="https://camilbounader.github.io/audit-budget/" class="font-semibold underline">camilbounader.github.io/audit-budget</a> (installable sur téléphone, export PDF).</div>
   <section id="view-wizard"></section>
   <section id="view-abonnements" class="hidden"></section>
   <section id="view-synthese" class="hidden"></section>
@@ -192,13 +193,13 @@ const RULES = [
   { cat: 'transport_abo', label: 'Transport (abonnement)', grp: 'contrainte', kw: ['NAVIGO', 'TBM', 'KEOLIS', 'TRANSDEV', 'RATP', 'TISSEO', 'TCL'] },
   { cat: 'sport', label: 'Sport & loisirs', grp: 'abonnement', kw: ['BASIC FIT', 'FITNESS PARK', 'ON AIR', 'KEEPCOOL', 'NEONESS', 'ORANGE BLEUE', 'CLUB MED GYM', 'STRAVA', 'GYMLIB', 'URBAN SOCCER'] },
   { cat: 'streaming', label: 'Streaming & médias', grp: 'abonnement', kw: ['NETFLIX', 'SPOTIFY', 'DEEZER', 'DISNEY', 'DISNEYPLUS', 'CANAL', 'CANALPLUS', 'PRIME VIDEO', 'AMAZON PRIME', 'AMZN PRIME', 'APPLE TV', 'APPLE MUSIC', 'YOUTUBE PREMIUM', 'YOUTUBE', 'PARAMOUNT', 'HBO MAX', 'CRUNCHYROLL', 'DAZN', 'BEIN', 'MOLOTOV', 'OCS', 'AUDIBLE', 'QOBUZ', 'TIDAL', 'TWITCH'] },
-  { cat: 'cloud', label: 'Cloud & logiciels', grp: 'abonnement', kw: ['ICLOUD', 'GOOGLE ONE', 'GOOGLE STORAGE', 'DROPBOX', 'MICROSOFT 365', 'OFFICE 365', 'MICROSOFT', 'ADOBE', 'CANVA', 'OPENAI', 'CHATGPT', 'ANTHROPIC', 'NOTION', 'NORDVPN', 'PROTON', 'SURFSHARK'] },
+  { cat: 'cloud', label: 'Cloud & logiciels', grp: 'abonnement', kw: ['GOOGLE PLAY', 'GOOGLE STORAGE', 'ICLOUD', 'GOOGLE ONE', 'GOOGLE STORAGE', 'DROPBOX', 'MICROSOFT 365', 'OFFICE 365', 'MICROSOFT', 'ADOBE', 'CANVA', 'OPENAI', 'CHATGPT', 'ANTHROPIC', 'NOTION', 'NORDVPN', 'PROTON', 'SURFSHARK'] },
   { cat: 'presse', label: 'Presse', grp: 'abonnement', kw: ['LE MONDE', 'LIBERATION', 'FIGARO', 'MEDIAPART', 'CAFEYN', 'SUD OUEST', 'L EQUIPE', 'LEQUIPE'] },
   { cat: 'jeux', label: 'Jeux vidéo', grp: 'abonnement', kw: ['PLAYSTATION', 'PSN', 'XBOX', 'NINTENDO', 'GAME PASS'] },
   { cat: 'telecom', label: 'Télécom & internet', grp: 'contrainte', kw: ['ORANGE', 'SOSH', 'SFR', 'RED BY SFR', 'FREE MOBILE', 'FREE TELECOM', 'FREEBOX', 'FREE', 'BOUYGUES', 'BOUYGUES TELECOM', 'B AND YOU', 'LA POSTE MOBILE', 'PRIXTEL', 'SYMA', 'NRJ MOBILE'] },
   { cat: 'alimentation', label: 'Alimentation', grp: 'courant', kw: ['CARREFOUR', 'LECLERC', 'E LECLERC', 'AUCHAN', 'LIDL', 'ALDI', 'INTERMARCHE', 'CASINO', 'MONOPRIX', 'FRANPRIX', 'SUPER U', 'HYPER U', 'U EXPRESS', 'BIOCOOP', 'NETTO', 'GRAND FRAIS', 'PICARD', 'COCCINELLE'] },
   { cat: 'restauration', label: 'Restauration & livraison', grp: 'courant', kw: ['UBER EATS', 'DELIVEROO', 'JUST EAT', 'MCDONALD', 'MCDONALDS', 'BURGER KING', 'KFC', 'RESTAURANT', 'BRASSERIE', 'BOULANGERIE', 'STARBUCKS', 'SUSHI', 'PIZZA'] },
-  { cat: 'transport', label: 'Transport & carburant', grp: 'courant', kw: ['TOTAL', 'TOTALENERGIES', 'ESSO', 'BP', 'SHELL', 'AVIA', 'STATION', 'UBER', 'BOLT', 'BLABLACAR', 'SNCF', 'OUIGO', 'PEAGE', 'VINCI AUTOROUTES', 'APRR', 'SANEF', 'PARKING', 'INDIGO'] },
+  { cat: 'transport', label: 'Transport & carburant', grp: 'courant', kw: ['TOTAL', 'TOTALENERGIES', 'ESSO', 'BP', 'SHELL', 'AVIA', 'STATION', 'UBER', 'BOLT', 'BLABLACAR', 'SNCF', 'OUIGO', 'PEAGE', 'AUTOROUTE', 'AUTOROUTES', 'VINCI AUTOROUTES', 'APRR', 'SANEF', 'ASF', 'COFIROUTE', 'ESCOTA', 'SAPN', 'ALIENOR', 'ATMB', 'PARKING', 'INDIGO'] },
   { cat: 'achats', label: 'Achats divers', grp: 'courant', kw: ['AMAZON', 'AMZN', 'FNAC', 'DARTY', 'CDISCOUNT', 'ZALANDO', 'VINTED', 'IKEA', 'LEROY MERLIN', 'CASTORAMA', 'ACTION', 'PAYPAL', 'DECATHLON', 'APPLE COM'] },
   { cat: 'sante_courant', label: 'Santé (soins)', grp: 'courant', kw: ['PHARMACIE', 'DOCTOLIB', 'MEDECIN', 'DR', 'CABINET', 'LABORATOIRE', 'OPTICIEN'] },
   { cat: 'retrait', label: "Retraits d'espèces", grp: 'courant', kw: ['RETRAIT DAB', 'RETRAIT', 'DAB'] }
@@ -211,9 +212,9 @@ const CREDIT_RULES = [
 ];
 const CAT_LABELS = Object.fromEntries([...RULES, ...CREDIT_RULES].map(r => [r.cat, r.label]));
 CAT_LABELS.autre = 'Autres dépenses'; CAT_LABELS.autre_credit = 'Autres crédits';
-CAT_LABELS.provisions = 'Provisions (taxe foncière, copro…)';
+CAT_LABELS.provisions = 'Provisions (taxe foncière, copro…)'; CAT_LABELS.interne = 'Virements entre mes comptes'; CAT_LABELS.abo_autre = 'Autres abonnements'; CAT_LABELS.contrainte_autre = 'Autres charges fixes';
 CAT_LABELS.coloc_recu = 'Remboursement coloc (reçu)'; CAT_LABELS.coloc_envoye = 'Remboursement coloc (envoyé)';
-const CAT_GRP = Object.fromEntries(RULES.map(r => [r.cat, r.grp])); CAT_GRP.provisions = 'contrainte';
+const CAT_GRP = Object.fromEntries(RULES.map(r => [r.cat, r.grp])); CAT_GRP.provisions = 'contrainte'; CAT_GRP.interne = 'interne'; CAT_GRP.abo_autre = 'abonnement'; CAT_GRP.contrainte_autre = 'contrainte';
 const GENERIC_KW = new Set(['ASSURANCE', 'ASSURANCES', 'LOYER', 'TAXE', 'IMPOT', 'IMPOTS', 'MUTUELLE', 'LIVRET', 'EPARGNE', 'RETRAIT', 'DAB', 'STATION', 'RESTAURANT', 'BRASSERIE', 'BOULANGERIE', 'CABINET', 'DR', 'MEDECIN', 'PHARMACIE', 'PARKING', 'EAU DE', 'TRAITEMENT', 'PAIE', 'SALAIRE']);
 
 const has = (n, kw) => n.includes(' ' + kw + ' ');
@@ -221,12 +222,22 @@ const NOISE = /\b(PRLV|PRELEVEMENT|SEPA|EUROPEEN|PAIEMENT|PAIEMT|PAR|CARTE|CB|FA
 function cleanLabel(label) { return normText(label).replace(NOISE, ' ').replace(/\s+/g, ' ').trim(); }
 
 // ctx.colocAliases : mots-clés (ex. TRICOUNT, prénom d'un coloc) qui signalent un remboursement entre colocataires
+const opKey = label => cleanLabel(label).split(' ').slice(0, 3).join(' ') || 'INCONNU';
+// Choix faits par l'utilisateur sur l'écran « à identifier » : ils priment sur tout le reste
+const OVR = {
+  loyer: { cat: 'logement', grp: 'contrainte' }, credit: { cat: 'credit', grp: 'contrainte' }, charge: { cat: 'contrainte_autre', grp: 'contrainte' },
+  abonnement: { cat: 'abo_autre', grp: 'abonnement' }, epargne: { cat: 'epargne', grp: 'epargne' }, interne: { cat: 'interne', grp: 'interne' },
+  courant: { cat: 'autre', grp: 'courant' }, revenu: { cat: 'autre_credit', grp: 'revenu' }, salaire: { cat: 'salaire', grp: 'revenu' }
+};
 function categorize(tx, ctx = {}) {
-  const n = normText(tx.label);
+  const n = normText(tx.label), key = opKey(tx.label), o = ctx.overrides && ctx.overrides[key];
+  if (o === 'coloc') return { ...tx, cat: tx.amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage', merchant: key };
+  if (o && OVR[o]) return { ...tx, ...OVR[o], merchant: key, manuel: true };
   for (const a of ctx.colocAliases || []) if (a && has(n, a))
     return { ...tx, cat: tx.amount > 0 ? 'coloc_recu' : 'coloc_envoye', grp: 'partage', merchant: a };
   const rules = tx.amount > 0 ? CREDIT_RULES.map(r => ({ ...r, grp: r.cat === 'epargne' ? 'epargne' : 'revenu' })) : RULES;
-  for (const r of rules) for (const kw of r.kw) if (has(n, kw)) {
+  const compact = n.replace(/ /g, '');
+  for (const r of rules) for (const kw of r.kw) if (has(n, kw) || (kw.length >= 6 && !GENERIC_KW.has(kw) && compact.includes(kw.replace(/ /g, '')))) {
     const merchant = GENERIC_KW.has(kw) ? (cleanLabel(tx.label).split(' ').slice(0, 3).join(' ') || kw) : kw;
     return { ...tx, cat: r.cat, grp: r.grp, merchant };
   }
@@ -620,6 +631,10 @@ function detectRecurring(txs) {
     const cv = std(amts) / mean(amts);
     if (regular < 0.6) continue;
     if (cv > (known ? 0.35 : 0.15)) continue;
+    if (!known && sorted[0].cat === 'autre') {
+      const carte = / (CB|CARTE|PAIEMENT) /.test(normText(sorted[0].label));
+      if (base.length < 3 || period.key === 'hebdomadaire' || (carte && (!['mensuel', 'annuel'].includes(period.key) || regular < 0.8))) continue;
+    }
     const last = amts[amts.length - 1], first = amts[0];
     out.push({
       id: 'r_' + normText(merchant).trim().replace(/\s/g, '_'),
@@ -634,6 +649,20 @@ function detectRecurring(txs) {
     });
   }
   return out.sort((a, b) => b.mensuel - a.mensuel);
+}
+
+/* ---------- Virements / prélèvements non reconnus, à faire identifier par l'utilisateur ---------- */
+function toIdentify(txs, overrides = {}) {
+  const g = {};
+  for (const t of txs) {
+    const key = opKey(t.label), known = overrides[key] != null;
+    if (!known && !['autre', 'autre_credit'].includes(t.cat)) continue;
+    if (!known && !/ (VIR|VIREMENT|VIRT|PRLV|PRELEVEMENT|TRANSFERT|TRANSFER|INST|SEPA) /.test(normText(t.label))) continue;
+    const k = key + (t.amount > 0 ? '|+' : '|-');
+    (g[k] = g[k] || { key, sens: t.amount > 0 ? 'entree' : 'sortie', l: [] }).l.push(t);
+  }
+  return Object.values(g).map(x => ({ key: x.key, sens: x.sens, n: x.l.length, montant: round2(median(x.l.map(t => Math.abs(t.amount)))), total: x.l.reduce((s, t) => s + Math.abs(t.amount), 0), exemple: x.l[x.l.length - 1].label }))
+    .filter(x => overrides[x.key] != null || x.n >= 2 || x.montant >= 150).sort((a, b) => b.total - a.total).slice(0, 25);
 }
 
 /* ---------- Anomalies & plan d'économies ---------- */
@@ -875,7 +904,7 @@ function investPlan(d, p, inv) {
     finals: { pessimiste: scen('pessimiste').at(-1), median: med.at(-1), optimiste: scen('optimiste').at(-1), verses: verses.at(-1), fraisChers: fraisChers.at(-1) } };
 }
 
-global.Engine = { months, CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
+global.Engine = { toIdentify, opKey, months, CREDIT_TYPES, creditType, detectCredits, parseCreditDoc, matchCredit, analyseCredits, parseOFX, parseStatementRows, classifyPdf, parseSavingsStatement, coverage, infer, savingsType, CONFIG, CAT_LABELS, CAT_GRP, parseAmount, parseDate, parseCSV, parseStatementLines, parseAvisImposition, parseFichePaie, categorize, detectRecurring, detectAnomalies, buildSavingsPlan, diagnose, envelopes, advise, investPlan, tmi, monthKey };
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="ui">
@@ -1679,6 +1708,7 @@ $('#btnMenu').onclick = async () => {
   $('#m4').onclick = close;
   $('#m5').onclick = () => { close(); newAudit(); };
 };
+try { if (!/github\.io$|^localhost$|^127\./.test(location.hostname)) $('#officialBanner').classList.remove('hidden'); } catch { }
 render();
 try { if ('serviceWorker' in navigator && location.protocol === 'https:' && window.top === window) navigator.serviceWorker.register('sw.js'); } catch { }
 })();
