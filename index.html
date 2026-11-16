@@ -112,7 +112,7 @@
 <div id="modal-root"></div>
 <div id="print-report"></div>
 <footer class="no-print max-w-5xl mx-auto px-4 pb-24 text-[11px] text-slate-400">
-  <b>Version du 16/11 15:30</b> · Outil pédagogique d'aide à la réflexion : ne constitue pas un conseil en investissement personnalisé (CIF) ni un conseil fiscal. Lecture PDF : pdf.js (Mozilla, licence Apache 2.0).
+  <b>Version du 16/11 16:30</b> · Outil pédagogique d'aide à la réflexion : ne constitue pas un conseil en investissement personnalisé (CIF) ni un conseil fiscal. Lecture PDF : pdf.js (Mozilla, licence Apache 2.0).
 </footer>
 
 <script id="engine">
@@ -708,8 +708,8 @@ function infer(rawTxs, ctx = {}) {
   if (txs.some(t => /PRET IMMO|CREDIT IMMO|TAXE FONCIERE/.test(normText(t.label)))) I.logement = 'proprietaire_credit';
   const versLivret = txs.filter(t => t.grp === 'epargne' && t.amount < 0);
   if (versLivret.length) I.versementEpargne = round2(-versLivret.reduce((s, t) => s + t.amount, 0) / nb);
-  I.epargneVersee = round2(-txs.filter(t => t.amount < 0 && (t.grp === 'epargne' || t.cat === 'interne')).reduce((s, t) => s + t.amount, 0) / nb);
-  I.epargneReprise = round2(txs.filter(t => t.amount > 0 && t.cat === 'interne').reduce((s, t) => s + t.amount, 0) / nb);
+  I.epargneVersee = round2(-txs.filter(t => t.amount < 0 && (t.grp === 'epargne' || t.cat === 'interne' && !t.caution)).reduce((s, t) => s + t.amount, 0) / nb);
+  I.epargneReprise = round2(txs.filter(t => t.amount > 0 && t.cat === 'interne' && !t.caution).reduce((s, t) => s + t.amount, 0) / nb);
   I.epargneNette = round2(I.epargneVersee - I.epargneReprise);
   return I;
 }
@@ -1148,6 +1148,8 @@ const sumKeys = (p, ks) => ks.reduce((s, k) => s + (+p[k] || 0), 0);
 const LIQUIDE = ['livretA', 'ldds', 'lep', 'livretsAutres'];
 const age = p => +p.age1 || null;
 // ctx : { part, shared:Set(merchant), externes:[{label,cat,montant}] } pour la colocation
+// entretien, réparation, pneus, contrôle technique : dépenses de voiture ponctuelles
+const ENTRETIEN_RE = / (GARAGE|STELLANTIS YOU|NORAUTO|FEU VERT|SPEEDY|MIDAS|CONTROLE TECHNIQUE|DEKRA|AUTOSUR|EUROMASTER|POINT S|CARGLASS|AD GARAGE|CARROSSERIE|PNEU|PNEUS|AUTO SERVICE|PEUGEOT|CITROEN|RENAULT|DACIA|TOYOTA|VOLKSWAGEN) /;
 function revenusRef(txs, profile) { const d = (+profile.net1 || 0) + (+profile.net2 || 0) + (+profile.autresRevenus || 0); return d > 0 ? d : txs.filter(t => t.amount > 0 && t.grp === 'revenu').reduce((s, t) => s + t.amount, 0) / months(txs); }
 function diagnose(txs, profile, ctx = {}) {
   const nb = months(txs), part = ctx.part ?? 1, shared = ctx.shared || new Set();
@@ -1176,8 +1178,8 @@ function diagnose(txs, profile, ctx = {}) {
   if (prov > 0) { parGrp.epargne -= prov; parGrp.contrainte += prov; parCat.provisions = prov; parCat.epargne = Math.max(0, (parCat.epargne || 0) - prov); }
   const { contrainte: contraintes, abonnement: abonnements, courant, frais, epargne: epargneVersee } = parGrp;
   // mouvements avec ses propres comptes (livrets, PEA, autre banque) : ce qui compte, c'est le solde net
-  const versVersEp = -txs.filter(t => t.amount < 0 && (t.grp === 'epargne' || t.cat === 'interne')).reduce((x, t) => x + t.amount, 0) / nb - prov;
-  const reprisEp = txs.filter(t => t.amount > 0 && t.cat === 'interne').reduce((x, t) => x + t.amount, 0) / nb;
+  const versVersEp = -txs.filter(t => t.amount < 0 && (t.grp === 'epargne' || t.cat === 'interne' && !t.caution)).reduce((x, t) => x + t.amount, 0) / nb - prov;
+  const reprisEp = txs.filter(t => t.amount > 0 && t.cat === 'interne' && !t.caution).reduce((x, t) => x + t.amount, 0) / nb;
   const epargneNette = versVersEp - reprisEp;
   const revenusDetectes = txs.filter(t => t.amount > 0 && t.grp === 'revenu').reduce((s, t) => s + t.amount, 0) / nb;
   const revenusDeclares = (+profile.net1 || 0) + (+profile.net2 || 0) + (+profile.autresRevenus || 0);
@@ -1191,18 +1193,20 @@ function diagnose(txs, profile, ctx = {}) {
   // dépenses exceptionnelles : gros montants ponctuels (réparation, voyage, caution…) — comptés, mais montrés à part
   const cnt = {}; txs.forEach(t => { if (t.amount < 0) cnt[t.merchant] = (cnt[t.merchant] || 0) + 1; });
   const seuil = Math.max(250, revenusRef(txs, profile) * 0.1);
-  const exceptionnelles = txs.filter(t => t.amount < -seuil && t.grp === 'courant' && (cnt[t.merchant] || 0) <= 2).sort((a, b) => a.amount - b.amount);
+  const exceptionnelles = txs.filter(t => t.grp === 'courant' && (t.amount < -seuil && (cnt[t.merchant] || 0) <= 2 || t.amount < -150 && ENTRETIEN_RE.test(normText(t.label)))).sort((a, b) => a.amount - b.amount);
+  const excCat = {}; exceptionnelles.forEach(t => excCat[t.cat] = (excCat[t.cat] || 0) - t.amount / nb);
   const exceptionnel = -exceptionnelles.reduce((s, t) => s + t.amount, 0) / nb;
   const resteAVivre = revenus - contraintes - frais;
   const uc = 1 + Math.max(0, (+profile.adultes || 1) - 1) * 0.5 + (+profile.enfantsPlus14 || 0) * 0.5 + (+profile.enfantsMoins14 || 0) * 0.3;
   const moisCible = CONFIG.moisPrecaution[profile.statut] || 3;
-  const essentiels = contraintes + frais + (parCat.alimentation || 0) + (parCat.transport || 0) + (parCat.sante_courant || 0);
+  const essentiels = contraintes + frais + (parCat.alimentation || 0) - (excCat.alimentation || 0) + (parCat.transport || 0) - (excCat.transport || 0) + (parCat.sante_courant || 0) - (excCat.sante_courant || 0); // sans les dépenses exceptionnelles
   const epargneDispo = sumKeys(profile, LIQUIDE);
   const epargneInvestie = sumKeys(profile, ['avMontant', 'perMontant', 'ctoMontant', 'epSalMontant']) + (+profile.peaValeur || +profile.peaVersements || 0);
   return {
     nbMois: nb, revenus, revenusDetectes, revenusDeclares, contraintes, abonnements, courant, frais, epargneVersee, epargneBrute: versVersEp, epargneReprise: reprisEp, epargneNette, depenses,
-    resteAVivre, resteAVivreUC: resteAVivre / uc, uc, capaciteEpargne: revenus - depenses, exceptionnel, exceptionnelles: exceptionnelles.slice(0, 8).map(t => ({ date: t.date, label: t.label, montant: -t.amount })), capaciteHorsExceptionnel: revenus - depenses + exceptionnel,
-    tauxEpargne: revenus > 0 ? (revenus - depenses) / revenus : 0,
+    resteAVivre, resteAVivreUC: resteAVivre / uc, uc, // capacité d'un mois « normal » : les grosses dépenses ponctuelles (réparation, voyage…) sont montrées à part, à provisionner
+    capaciteEpargne: revenus - depenses + exceptionnel, exceptionnel, exceptionnelles: exceptionnelles.slice(0, 8).map(t => ({ date: t.date, label: t.label, montant: -t.amount, cat: t.cat })), capaciteHorsExceptionnel: revenus - depenses + exceptionnel, capaciteApresExceptionnel: revenus - depenses,
+    tauxEpargne: revenus > 0 ? (revenus - depenses + exceptionnel) / revenus : 0,
     tauxEndettement: revenus > 0 ? credit / revenus : 0, credit,
     precautionCible: essentiels * moisCible, moisCible, essentiels,
     epargneDispo, epargneInvestie, tmi: tmi(+profile.rfr, +profile.parts), parCat, coloc, colocNet, credits: ctx.credits || []
@@ -1330,7 +1334,7 @@ const fresh = () => ({
   screen: 'accueil', device: detectDevice(), banques: [], tutoBank: null,
   profile: { profilType: 'jeune_actif', adultes: 1, enfantsMoins14: 0, enfantsPlus14: 0, logement: 'locataire', statut: '', horizon: '', tolerance: '', projets: [],
     colocNb: 2, colocPart: '', colocAliases: 'TRICOUNT', externes: [] },
-  docs: [], raw: [], holders: [], comptes: [], flags: {}, shared: {}, overrides: {}, incEx: {}, placements: {}, aiOn: null, aiCats: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
+  docs: [], raw: [], holders: [], comptes: [], incAmt: {}, insType: {}, flags: {}, shared: {}, overrides: {}, incEx: {}, placements: {}, aiOn: null, aiCats: {}, credits: [], docCredits: [], creditsInit: false, inferred: {}, applied: false, analysed: false, pdfDebug: null, tab: 'abonnements',
   inv: { initial: 0, mensuel: null, horizon: null, fraisEtf: 0.2, fraisFonds: 1.8 }
 });
 let S = fresh();
@@ -1554,6 +1558,8 @@ function pdfDebugHtml() {
 }
 
 /* ---------- « Voici ce que j'ai compris » ---------- */
+// total des autres revenus : sources cochées, au montant corrigé par l'utilisateur s'il l'a modifié
+const autresTotal = I => Math.round((I && I.autresRevenusDetail || []).filter(y => !y.arretee && !S.incEx[y.nom]).reduce((x, y) => x + (S.incAmt && S.incAmt[y.nom] != null ? +S.incAmt[y.nom] : y.moyenne), 0) * 100) / 100;
 function applyInferences() {
   const I = S.inferred = E.infer(S.raw, catCtx()), p = S.profile; S.avisIA = null;
   const paieNets = S.docs.filter(d => d.kind === 'paie' && d.net).map(d => d.net);
@@ -1561,7 +1567,7 @@ function applyInferences() {
   const net = I.salaire && paieNets.length ? Math.round([...paieNets].sort((a, b) => a - b)[paieNets.length >> 1] * 100) / 100 : paieNets.length ? Math.round(avg(paieNets) * 100) / 100 : (I.salaire || I.pension || '');
   if (!p.net1 || +p.net1 === +A.net1) { p.net1 = net; A.net1 = net; }
   if (I.autresRevenusDetail) { // saisie manuelle respectée : on ne remplace que la valeur calculée automatiquement
-    const v = Math.round(I.autresRevenusDetail.filter(y => !y.arretee && !S.incEx[y.nom]).reduce((x, y) => x + y.moyenne, 0) * 100) / 100 || '';
+    const v = autresTotal(I) || '';
     if (p.autresRevenus === '' || p.autresRevenus == null || +p.autresRevenus === +A.autres) { p.autresRevenus = v; A.autres = v; }
   }
   if (!p.statut && I.statut) p.statut = I.statut;
@@ -1580,7 +1586,7 @@ function renderCompris() {
     <div class="space-y-3 mt-6">
       ${row('📅', 'Période analysée', `${E.months(S.raw)} mois${cov.debut ? ` (${moisLabel(cov.debut)} → ${moisLabel(cov.fin)})` : ''} · ${S.raw.length} opérations`, '', '')}
       ${row('💶', 'Revenu net mensuel', p.net1 ? eur(+p.net1, 0) + (I.salaireJour ? ` <span class="text-sm font-normal text-slate-500">versé vers le ${I.salaireJour} du mois</span>` : '') : 'Non détecté', `<input type="number" inputmode="decimal" data-k="net1" value="${esc(p.net1)}" class="inp-sm w-36"> €/mois`, S.docs.some(d => d.kind === 'paie' && d.net) ? 'fiche de paie' : I.salaire ? 'relevés' : I.pension ? 'pension' : '')}
-      ${I.autresRevenus ? row('🤝', 'Autres revenus réguliers (moyenne mensuelle)', eur(+p.autresRevenus || 0, 0) + '/mois' + (S.auto && +p.autresRevenus !== +S.auto.autres ? ' <span class="text-xs font-normal text-blue-700">(votre saisie)</span>' : '') + (I.autresRevenusDetail ? `<span class="block text-sm font-normal text-slate-500">${I.autresRevenusDetail.map((x, i) => `<label class="flex items-start gap-2 mt-1"><input type="checkbox" data-incsrc="${i}" ${x.arretee || S.incEx[x.nom] ? '' : 'checked'} class="w-4 h-4 mt-0.5"><span>${esc(x.nom)} ≈ ${eur(x.moyenne, 0)}/mois (${x.n} versements${x.debut ? `, ${MOIS[x.debut.getUTCMonth()]} → ${MOIS[x.fin.getUTCMonth()]} ${x.fin.getUTCFullYear()}` : ''})${x.arretee ? ' <b class="text-amber-700">arrêté depuis</b>' : ''}</span></label>`).join('') + '<span class="block text-xs text-slate-400 mt-1">Décochez ce qui n\'est pas un revenu à vous (remboursements, virements de vos comptes…).</span>'}</span>` : ''), `<input type="number" inputmode="decimal" data-k="autresRevenus" value="${esc(p.autresRevenus)}" class="inp-sm w-36"> €/mois`, 'relevés') : ''}
+      ${I.autresRevenus ? row('🤝', 'Autres revenus réguliers (moyenne mensuelle)', eur(+p.autresRevenus || 0, 0) + '/mois' + (S.auto && +p.autresRevenus !== +S.auto.autres ? ' <span class="text-xs font-normal text-blue-700">(votre saisie)</span>' : '') + (I.autresRevenusDetail ? `<span class="block text-sm font-normal text-slate-500">${I.autresRevenusDetail.map((x, i) => `<label class="flex items-start gap-2 mt-1"><input type="checkbox" data-incsrc="${i}" ${x.arretee || S.incEx[x.nom] ? '' : 'checked'} class="w-4 h-4 mt-0.5"><span>${esc(x.nom)} <input type="number" inputmode="decimal" data-incamt="${i}" value="${esc(S.incAmt && S.incAmt[x.nom] != null ? S.incAmt[x.nom] : Math.round(x.moyenne))}" class="inp-sm w-24 !py-0.5 !text-sm"> €/mois${S.incAmt && S.incAmt[x.nom] != null ? ` <span class="text-xs text-blue-700">(corrigé, calculé : ${eur(x.moyenne, 0)})</span>` : ''} (${x.n} versements${x.debut ? `, ${MOIS[x.debut.getUTCMonth()]} → ${MOIS[x.fin.getUTCMonth()]} ${x.fin.getUTCFullYear()}` : ''})${x.arretee ? ' <b class="text-amber-700">arrêté depuis</b>' : ''}</span></label>`).join('') + '<span class="block text-xs text-slate-400 mt-1">Décochez ce qui n\'est pas un revenu à vous (remboursements, virements de vos comptes…).</span>'}</span>` : ''), `<input type="number" inputmode="decimal" data-k="autresRevenus" value="${esc(p.autresRevenus)}" class="inp-sm w-36"> €/mois`, 'relevés') : ''}
       ${row('🏠', 'Logement', { locataire: 'Locataire', proprietaire_credit: 'Propriétaire avec crédit', proprietaire: 'Propriétaire', heberge: 'Hébergé' }[p.logement], `<select data-k="logement" class="inp-sm">${[['locataire', 'Locataire'], ['proprietaire_credit', 'Propriétaire avec crédit'], ['proprietaire', 'Propriétaire sans crédit'], ['heberge', 'Hébergé']].map(([v, l]) => `<option value="${v}" ${p.logement === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`, I.logement ? 'relevés' : '')}
       ${I.coloc ? row('👥', 'Colocation probable', `${I.coloc.nb} virements « ${esc(I.coloc.alias)} » repérés`, `<label class="flex items-center gap-2 text-sm"><input type="checkbox" id="cbColoc" ${isColoc() ? 'checked' : ''} class="w-4 h-4"> Oui, je suis en colocation</label>`, 'relevés') : ''}
       ${(() => { const dc = E.detectCredits(catAll()); return dc.length ? row('🏷️', 'Crédits repérés sur vos relevés', dc.map(c => `${esc(c.organisme)} ${eur(c.mensualite, 0)}/mois`).join(' · '), '<span class="text-xs text-slate-500">Vous pourrez les compléter à l\'étape « Vos crédits ».</span>', 'relevés') : ''; })()}
@@ -1687,7 +1693,10 @@ function bindWizard() {
   v.querySelectorAll('[data-crdel]').forEach(b => b.onclick = () => { S.credits.splice(+b.dataset.crdel, 1); renderWizard(); });
   const ca = $('#crAdd'); if (ca) ca.onclick = () => { S.credits.push({ type: 'conso', organisme: '', mensualite: '', crd: '', taux: '', fin: '', assurance: '', source: 'manuel', surReleves: false }); renderWizard(); };
   const ea = $('#extAdd'); if (ea) ea.onclick = () => { S.profile.externes.push({ label: '', cat: 'energie', montant: 0 }); renderWizard(); };
-  v.querySelectorAll('[data-incsrc]').forEach(el => el.onchange = () => { const D = S.inferred.autresRevenusDetail || [], x = D[+el.dataset.incsrc]; S.incEx[x.nom] = !el.checked; if (x.arretee && el.checked) { x.arretee = false; S.incEx[x.nom] = false; } S.profile.autresRevenus = Math.round(D.filter(y => !y.arretee && !S.incEx[y.nom]).reduce((s, y) => s + y.moyenne, 0) * 100) / 100; (S.auto = S.auto || {}).autres = S.profile.autresRevenus; renderWizard(); });
+  v.querySelectorAll('[data-incsrc]').forEach(el => el.onchange = () => { const D = S.inferred.autresRevenusDetail || [], x = D[+el.dataset.incsrc]; S.incEx[x.nom] = !el.checked; if (x.arretee && el.checked) { x.arretee = false; S.incEx[x.nom] = false; } S.profile.autresRevenus = autresTotal(S.inferred); (S.auto = S.auto || {}).autres = S.profile.autresRevenus; renderWizard(); });
+  v.querySelectorAll('[data-incamt]').forEach(el => el.onchange = () => { const x = (S.inferred.autresRevenusDetail || [])[+el.dataset.incamt]; if (!x) return; S.incAmt = S.incAmt || {};
+    if (el.value === '' || Math.round(+el.value) === Math.round(x.moyenne)) delete S.incAmt[x.nom]; else S.incAmt[x.nom] = +el.value;
+    S.profile.autresRevenus = autresTotal(S.inferred); (S.auto = S.auto || {}).autres = S.profile.autresRevenus; const tot = document.querySelector('[data-k=autresRevenus]'); if (tot) tot.value = S.profile.autresRevenus; });
   const cb = $('#cbColoc'); if (cb) cb.onchange = () => { S.profile.profilType = cb.checked ? 'colocation' : 'jeune_actif'; S.profile.adultes = 1; };
   const at = $('#aiToggle'); if (at) at.onchange = async () => { if (at.checked) { S.aiOn = null; if (!(await ensureAiConsent())) at.checked = false; } else S.aiOn = false; renderWizard(); };
   const fi = $('#fileInput'); if (fi) fi.onchange = () => { handleFiles([...fi.files]); fi.value = ''; };
@@ -2087,7 +2096,7 @@ function bilanClair(d, txs) {
   if (+p.net1) R.push(`Salaire : <b>${eur(+p.net1, 0)}/mois</b>${I.ancienSalaire && I.ancienSalaire.length ? ` (nouveau poste ; l'ancien salaire d'environ ${eur(I.ancienSalaire[0].montant, 0)} s'est arrêté en ${mois(I.ancienSalaire[0].fin)} et n'est plus compté)` : ''}.`);
   const autresAuto = !S.auto || +p.autresRevenus === +S.auto.autres;
   if (!autresAuto && +p.autresRevenus) R.push(`Autres revenus (montant que vous avez indiqué) : <b>${eur(+p.autresRevenus, 0)}/mois</b>.`);
-  for (const x of (autresAuto ? I.autresRevenusDetail || [] : []).filter(x => !x.arretee && !S.incEx[x.nom])) R.push(`${esc(x.nom)} : <b>≈ ${eur(x.moyenne, 0)}/mois</b> ${x.cat === 'prestations' ? '(montant actuel)' : x.max > x.min * 1.5 ? `en moyenne (de ${eur(x.min, 0)} à ${eur(x.max, 0)} selon les mois)` : 'en moyenne'}.`);
+  for (const x of (autresAuto ? I.autresRevenusDetail || [] : []).filter(x => !x.arretee && !S.incEx[x.nom])) R.push(S.incAmt && S.incAmt[x.nom] != null ? `${esc(x.nom)} : <b>${eur(+S.incAmt[x.nom], 0)}/mois</b> (montant que vous avez corrigé).` : `${esc(x.nom)} : <b>≈ ${eur(x.moyenne, 0)}/mois</b> ${x.cat === 'prestations' ? '(montant actuel)' : x.max > x.min * 1.5 ? `en moyenne (de ${eur(x.min, 0)} à ${eur(x.max, 0)} selon les mois)` : 'en moyenne'}.`);
   const rec = E.detectRecurring(txs).filter(r => r.grp === 'contrainte' && r.cat !== 'credit');
   for (const r of rec.slice(0, 6)) F.push(`${esc(E.CAT_LABELS[r.cat] || r.cat)} — ${esc(r.merchant)} : ${eur(r.mensuel, 0)}/mois${r.cat === 'logement' && txs.some(t => t.loyerAuto && t.merchant === r.merchant) ? ' <span class="text-slate-400">(virement mensuel reconnu comme loyer)</span>' : ''}`);
   for (const c of d.credits) F.push(`Crédit ${esc(c.organisme || E.CREDIT_TYPES[c.type] || '')} : ${eur(+c.mensualite || 0, 0)}/mois${c.crd !== '' && c.crd != null ? `, reste ${eur(+c.crd, 0)}` : ''}${c.taux !== '' && c.taux != null ? ` à ${c.taux} %` : ''}${c.fin ? `, fin ${mois(c.fin)}` : ''}${c.assuranceResiliee ? ' (assurance emprunteur résiliée)' : ''}`);
@@ -2096,8 +2105,14 @@ function bilanClair(d, txs) {
   if (d.colocNet && Math.abs(d.colocNet) >= 10) V.push(`Remboursements entre colocataires : ${d.colocNet < 0 ? `vous recevez ${eur(-d.colocNet, 0)}/mois de plus que vous n'envoyez (déduit de vos dépenses)` : `vous envoyez ${eur(d.colocNet, 0)}/mois de plus que vous ne recevez (ajouté à vos dépenses)`}.`);
   if (d.exceptionnelles.length) V.push(`Dépenses exceptionnelles comptées dans la moyenne : ${d.exceptionnelles.slice(0, 4).map(x => `${esc(E.opKey(x.label))} ${eur(x.montant, 0)} (${mois(x.date)})`).join(', ')} — soit ${eur(d.exceptionnel, 0)}/mois.`);
   const verse = d.epargneBrute, repris = d.epargneReprise;
-  B.push(`Revenus ${eur(d.revenus, 0)} − dépenses ${eur(d.depenses, 0)} = <b>${d.capaciteEpargne >= 0 ? '+' : ''}${eur(d.capaciteEpargne, 0)}/mois</b>${d.exceptionnel ? ` (${d.capaciteHorsExceptionnel >= 0 ? '+' : ''}${eur(d.capaciteHorsExceptionnel, 0)}/mois sans les dépenses exceptionnelles)` : ''}.`);
-  if (verse > 20 || repris > 20) B.push(`Avec vos comptes d'épargne et de placement : ${eur(verse, 0)}/mois versés et ${eur(repris, 0)}/mois repris en moyenne — ces allers-retours s'annulent en grande partie ; le solde, <b>${verse - repris >= 0 ? '+' : ''}${eur(verse - repris, 0)}/mois</b>, est ce que vous avez réellement mis de côté${verse - repris < 0 ? ' (négatif : vous avez puisé dans votre épargne)' : ''}.`);
+  const depHab = d.depenses - d.exceptionnel;
+  B.push(`<b>Un mois normal</b> : revenus ${eur(d.revenus, 0)} − dépenses habituelles ${eur(depHab, 0)} = <b>${d.capaciteEpargne >= 0 ? '+' : ''}${eur(d.capaciteEpargne, 0)}/mois</b> disponibles pour épargner.`);
+  if (d.exceptionnel >= 5) B.push(`Dépenses exceptionnelles : ${eur(d.exceptionnel, 0)}/mois en moyenne sur la période. Elles reviendront sous une autre forme (réparation, voyage…) : mettre de côté ≈ ${eur(Math.ceil(d.exceptionnel / 10) * 10, 0)}/mois sur un livret « imprévus » évite de les payer en puisant ailleurs. Il resterait alors ${eur(d.capaciteApresExceptionnel, 0)}/mois.`);
+  if (verse > 20 || repris > 20) {
+    const net = verse - repris, obs = d.revenusDetectes - d.depenses, delta = obs - net; // ce qui est resté (ou a été pris) sur le compte courant
+    B.push(`<b>Ce que vous avez réellement fait</b> sur ${d.nbMois} mois : ${eur(verse, 0)}/mois versés vers vos livrets et placements, ${eur(repris, 0)}/mois repris, soit <b>${net >= 0 ? '+' : ''}${eur(net, 0)}/mois</b> mis de côté.`);
+    if (Math.abs(net - d.capaciteApresExceptionnel) > 40) B.push(`Pourquoi ce n'est pas le même chiffre que la capacité : la capacité utilise vos revenus <i>actuels</i> (${eur(d.revenus, 0)}), alors que sur la période vous avez réellement reçu ≈ ${eur(d.revenusDetectes, 0)}/mois${(S.inferred || {}).ancienSalaire ? ' (ancien salaire, puis nouveau)' : ''}. ${Math.abs(delta) >= 20 ? `Et votre compte courant a ${delta < 0 ? `baissé d'environ ${eur(-delta * d.nbMois, 0)}` : `gagné environ ${eur(delta * d.nbMois, 0)}`} sur la période${delta < 0 ? ' : une partie de l\'épargne a été prise dessus' : ''}.` : ''}`);
+  }
   const verdict = d.capaciteEpargne < -50 ? 'Vos dépenses dépassent vos revenus : la différence est prise sur votre épargne.' : d.capaciteEpargne < 0.05 * d.revenus ? 'Votre budget est à l\'équilibre : les revenus couvrent les dépenses, mais il reste peu à mettre de côté chaque mois.' : `Vous dégagez ${pct(d.tauxEpargne)} de vos revenus : c'est la somme que vous pouvez épargner ou investir sans toucher à vos réserves.`;
   return { R, F, V, B, verdict };
 }
@@ -2123,6 +2138,87 @@ async function avisIA() {
 }
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#btnAvisIA')) avisIA(); });
 if (/^localhost$|^127\./.test(location.hostname)) window.__app = { get S() { return S; }, goTo, render, initCredits, compute, applyInferences };
+/* ---------- Passer à l'action : aide concrète poste par poste (voiture, assurances, crédit, banque, abonnements) ---------- */
+const INS_TYPES = [['', 'Ce contrat couvre…'], ['habitation', 'Habitation'], ['auto', 'Voiture'], ['moto', 'Deux-roues'], ['telephone', 'Téléphone / appareil'], ['emprunteur', 'Emprunteur (crédit)'], ['sante', 'Santé / prévoyance'], ['juridique', 'Protection juridique'], ['autre', 'Autre / je ne sais pas']];
+// Crédit à mensualité fixe : nombre de mensualités et intérêts restants (taux annuel en %)
+function resteCredit(crd, taux, m) { const i = taux / 1200; if (!(crd > 0) || !(m > 0)) return null; if (!i) return { n: Math.ceil(crd / m), interets: 0 }; const x = 1 - crd * i / m; if (x <= 0) return null; const n = -Math.log(x) / Math.log(1 + i); return { n: Math.ceil(n), interets: Math.max(0, n * m - crd) }; }
+function simuRA(c, montant) {
+  const crd = +c.crd, m = +c.mensualite, avant = resteCredit(crd, +c.taux, m), apres = resteCredit(crd - montant, +c.taux, m);
+  if (!avant || !apres) return null;
+  const ira = montant <= 10000 ? 0 : montant * (avant.n > 12 ? 0.01 : 0.005); // crédit à la consommation (dont auto) : pas d'indemnité jusqu'à 10 000 € remboursés sur 12 mois
+  const livret = montant * E.CONFIG.rendements.securise / 100 * avant.n / 12;
+  return { gain: avant.interets - apres.interets - (c.type === 'immo' ? 0 : ira), mois: avant.n - apres.n, livret, ira: c.type === 'immo' ? null : ira, avant };
+}
+function actionsHtml(d, txs, recurring) {
+  if (!S.raw.length) return '';
+  const nb = d.nbMois, sec = [], insT = S.insType = S.insType || {};
+  const sumCat = (f) => -txs.filter(t => t.amount < 0 && f(t)).reduce((x, t) => x + t.amount, 0) / nb;
+  // 🚗 Voiture
+  const auto = d.credits.filter(c => c.type === 'auto'), ass = recurring.filter(r => r.cat === 'assurance');
+  const carbu = sumCat(t => t.cat === 'transport' && !/ (GARAGE|STELLANTIS YOU|NORAUTO|FEU VERT|SPEEDY|MIDAS|CONTROLE TECHNIQUE|DEKRA|AUTOSUR|CARGLASS) /.test(' ' + t.label.toUpperCase().normalize('NFD').replace(/[^A-Z0-9]+/g, ' ') + ' '));
+  const entretien = d.exceptionnelles.filter(x => x.cat === 'transport').reduce((x, t) => x + t.montant, 0) / nb + sumCat(t => t.cat === 'transport' && t.amount > -150 && / (GARAGE|STELLANTIS YOU|NORAUTO|FEU VERT|SPEEDY|MIDAS|CONTROLE TECHNIQUE|DEKRA|AUTOSUR|CARGLASS) /.test(' ' + t.label.toUpperCase().normalize('NFD').replace(/[^A-Z0-9]+/g, ' ') + ' '));
+  const assAuto = ass.filter(r => insT[r.merchant] === 'auto').reduce((x, r) => x + r.mensuel, 0);
+  if (auto.length || entretien > 5 || carbu > 60) {
+    const cred = auto.reduce((x, c) => x + (+c.mensualite || 0), 0), tot = cred + assAuto + carbu + entretien;
+    const c = auto.find(c => +c.crd > 0 && +c.taux > 0 && +c.mensualite > 0), surplus = Math.max(0, d.epargneDispo - d.precautionCible);
+    const ra = c ? (S.raMontant ?? Math.min(+c.crd, Math.max(500, Math.round(surplus / 100) * 100 || 1000))) : 0, sim = c ? simuRA(c, ra) : null;
+    sec.push(['🚗', `Votre voiture : ≈ ${eur(tot, 0)}/mois au total`, `<ul class="space-y-1">
+      ${cred ? `<li>• Crédit : <b>${eur(cred, 0)}</b>/mois</li>` : ''}<li>• Assurance : <b>${assAuto ? eur(assAuto, 0) + '/mois' : '?'}</b> ${assAuto ? '' : '<span class="text-xs text-slate-500">(indiquez ci-dessous lequel de vos contrats assure la voiture)</span>'}</li>
+      <li>• Carburant, péages, stationnement : <b>${eur(carbu, 0)}</b>/mois</li><li>• Entretien et réparations : <b>${eur(entretien, 0)}</b>/mois en moyenne${d.exceptionnelles.some(x => x.cat === 'transport') ? ` (${d.exceptionnelles.filter(x => x.cat === 'transport').map(x => `${eur(x.montant, 0)} en ${MOIS[new Date(x.date).getUTCMonth()]}`).join(', ')})` : ''}</li></ul>
+      <div class="mt-3 font-medium">Ce que vous pouvez faire</div><ol class="list-decimal pl-5 space-y-1 mt-1">
+      ${c ? `<li><b>Rembourser une partie du crédit par anticipation</b> (taux ${c.taux} %, reste ${eur(+c.crd, 0)} sur ${sim ? sim.avant.n : '?'} mois).
+        <div class="mt-2 flex items-center gap-2 flex-wrap">Si je rembourse <input type="number" inputmode="decimal" id="raMontant" value="${ra}" class="inp-sm w-28"> €${sim ? ` → <span>j'économise <b class="text-emerald-700">${eur(sim.gain, 0)}</b> d'intérêts et je termine <b>${sim.mois} mois</b> plus tôt</span>` : ''}</div>
+        ${sim ? `<p class="text-xs text-slate-500 mt-1">Placée sur un livret (≈ ${E.CONFIG.rendements.securise} %), la même somme rapporterait ≈ ${eur(sim.livret, 0)} sur la même durée.${sim.ira === 0 ? ' Pour un crédit à la consommation (dont auto), aucune indemnité n\'est due tant que vous remboursez au plus 10 000 € sur 12 mois.' : sim.ira ? ` Indemnité possible ≈ ${eur(sim.ira, 0)} (déjà déduite).` : ''} ${surplus < ra ? `<b class="text-amber-700">Attention : gardez d'abord votre épargne de précaution (${eur(d.precautionCible, 0)}) ; vous en avez ${eur(d.epargneDispo, 0)}.</b>` : ''} Demande à faire par écrit ou depuis l'espace client de l'organisme.</p>` : ''}</li>` : ''}
+      <li><b>Entretien</b> : en dehors de la garantie constructeur, demandez au moins deux devis (garage indépendant, centre auto) dès que la facture dépasse 200–300 € ; l'entretien chez un indépendant ne fait pas perdre la garantie s'il respecte le carnet du constructeur. Mettez ${eur(Math.ceil(Math.max(entretien, 30) / 10) * 10, 0)}/mois de côté pour ces frais : ils ne seront plus une surprise.</li>
+      <li><b>Assurance auto</b> : comparez chaque année à garanties identiques (même franchise, même formule) ; après un an de contrat, vous pouvez changer à tout moment et le nouvel assureur résilie l'ancien pour vous (loi Hamon).</li>
+      ${carbu > 60 ? `<li><b>Carburant</b> : le prix varie fortement d'une station à l'autre ; le site officiel prix-carburants.gouv.fr compare les stations autour de vous.</li>` : ''}</ol>`]);
+  }
+  // 🛡️ Assurances
+  if (ass.length) {
+    const types = {}; ass.forEach(r => { const t = insT[r.merchant]; if (t && t !== 'autre') (types[t] = types[t] || []).push(r); });
+    const doubles = Object.entries(types).filter(([, l]) => l.length > 1);
+    sec.push(['🛡️', `Vos assurances : ${eur(ass.reduce((x, r) => x + r.mensuel, 0), 0)}/mois (${ass.reduce((x, r) => x + (r.lignes || 1), 0)} contrats)`, `<div class="space-y-2">${ass.map(r => `<div class="flex items-center justify-between gap-2 flex-wrap"><span>${esc(r.merchant)} — <b>${eur(r.mensuel, 2)}</b>/mois</span><select data-instype="${esc(r.merchant)}" class="inp-sm">${INS_TYPES.map(([v, l]) => `<option value="${v}" ${insT[r.merchant] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('')}</div>
+      ${doubles.length ? `<p class="mt-3 text-sm text-red-700 font-medium">⚠️ Deux contrats pour le même risque : ${doubles.map(([t, l]) => `${(INS_TYPES.find(x => x[0] === t) || [, t])[1]} (${l.map(r => esc(r.merchant)).join(' + ')})`).join(' ; ')}. Gardez le plus complet et résiliez l'autre.</p>` : ''}
+      <ol class="list-decimal pl-5 space-y-1 mt-3"><li>Ouvrez les <b>conditions particulières</b> de chaque contrat (espace client) : ce qui est couvert, la franchise, la date d'échéance.</li>
+      <li>Cherchez les <b>doublons</b> : une carte bancaire haut de gamme inclut souvent l'assurance voyage et la location de voiture ; l'assurance « téléphone » double parfois l'habitation ; en colocation, un seul contrat habitation peut couvrir tous les colocataires.</li>
+      <li>Demandez <b>deux ou trois devis à garanties égales</b> (même franchise, mêmes options).</li>
+      <li>Utilisez le devis pour <b>renégocier</b> avec votre assureur actuel, ou changez : après un an, auto et habitation sont résiliables à tout moment et le nouvel assureur fait la démarche.</li></ol>
+      <details class="mt-3"><summary class="text-sm text-blue-700 cursor-pointer">✉️ Modèle de message pour renégocier</summary><textarea readonly class="inp !text-xs mt-2 h-40" id="txtNego">Bonjour,
+
+Je suis client(e) chez vous pour mon contrat n° [numéro]. J'ai reçu une proposition d'un autre assureur pour des garanties équivalentes à [montant] € par an, contre [montant actuel] € chez vous.
+Avant de prendre ma décision, pouvez-vous me proposer un tarif ajusté ou une formule mieux adaptée à ma situation ?
+
+Cordialement,
+[Nom Prénom]</textarea><button type="button" data-copy="txtNego" class="btn-ghost !text-xs mt-1">Copier</button></details>
+      <details class="mt-2"><summary class="text-sm text-blue-700 cursor-pointer">✉️ Modèle de lettre de résiliation</summary><textarea readonly class="inp !text-xs mt-2 h-44" id="txtResil">[Nom Prénom]
+[Adresse]
+
+Objet : Résiliation de mon contrat n° [numéro]
+
+Madame, Monsieur,
+
+Mon contrat étant souscrit depuis plus d'un an, je vous demande de le résilier conformément à l'article L113-15-2 du Code des assurances. La résiliation prendra effet un mois après la réception de ce courrier.
+Merci de me rembourser la part de cotisation correspondant à la période non couverte.
+
+Veuillez agréer, Madame, Monsieur, mes salutations distinguées.
+[Date et signature]</textarea><button type="button" data-copy="txtResil" class="btn-ghost !text-xs mt-1">Copier</button></details>`]);
+  }
+  // 🏦 Banque
+  const fraisB = sumCat(t => ['frais_optimisable', 'frais_evitable'].includes(t.cat));
+  if (fraisB >= 3) sec.push(['🏦', `Frais bancaires : ${eur(fraisB * 12, 0)}/an`, `<ol class="list-decimal pl-5 space-y-1"><li>Regardez ce que comprend votre offre : souvent une carte haut de gamme ou des options dont vous n'avez pas besoin.</li><li>Demandez à votre conseiller une offre moins chère (carte classique, offre jeune ou « essentielle »).</li><li>Sinon, de nombreuses banques en ligne proposent compte et carte sans frais sous conditions : la nouvelle banque peut transférer vos prélèvements et virements pour vous, gratuitement (mobilité bancaire).</li></ol>`]);
+  // 📺 Abonnements
+  const abos = recurring.filter(r => r.grp === 'abonnement' && r.mensuel >= 3);
+  if (abos.length) sec.push(['📺', `Abonnements : ${eur(abos.reduce((x, r) => x + r.mensuel, 0), 0)}/mois`, `<p>${abos.map(r => `${esc(r.merchant)} ${eur(r.mensuel, 2)}`).join(' · ')}</p><ol class="list-decimal pl-5 space-y-1 mt-2"><li>Pour chacun : l'avez-vous utilisé ce mois-ci ? Sinon, cochez « Peu utilisé » dans l'onglet Abonnements.</li><li>Un abonnement souscrit en ligne doit pouvoir se résilier en ligne, en quelques clics (bouton « résilier »).</li><li>Formule famille : partagez-la et demandez à chacun une participation égale.</li></ol>`]);
+  if (!sec.length) return '';
+  return card(`<h2 class="font-semibold">🛠️ Passer à l'action</h2><p class="text-sm text-slate-500 mt-1">Pour chaque poste qui pèse, ce que vous pouvez faire concrètement.</p>
+    <div class="space-y-2 mt-3">${sec.map(([ico, t, body], i) => `<details class="border border-slate-200 rounded-xl" ${S.openAct === i ? 'open' : ''} data-act="${i}"><summary class="p-3 cursor-pointer font-medium">${ico} ${t}</summary><div class="px-4 pb-4 text-sm text-slate-700">${body}</div></details>`).join('')}</div>`);
+}
+document.addEventListener('change', e => {
+  const t = e.target; if (!t || !t.closest) return;
+  if (t.dataset && t.dataset.instype != null) { S.insType = S.insType || {}; S.insType[t.dataset.instype] = t.value; S.openAct = +t.closest('[data-act]').dataset.act; renderSynthese(); }
+  if (t.id === 'raMontant') { S.raMontant = Math.max(0, +t.value || 0); S.openAct = +t.closest('[data-act]').dataset.act; renderSynthese(); }
+});
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-copy]'); if (!b) return; const el = document.getElementById(b.dataset.copy); if (el) { (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(() => toast('Copié ✓')).catch(() => { el.select(); toast('Sélectionné : copiez avec Ctrl+C'); }); } });
 /* ---------- Diagnostic technique à copier (anonymisé) pour signaler un problème ---------- */
 function diagText() {
   const { d, txs } = compute(), L = [];
@@ -2292,7 +2388,7 @@ function bars(rows) {
 }
 function renderSynthese() {
   if (needData('synthese')) return;
-  const { d, plan, txs } = compute(), C = E.advise(d, S.profile), ENV = E.envelopes(d, S.profile);
+  const { d, plan, txs, recurring } = compute(), C = E.advise(d, S.profile), ENV = E.envelopes(d, S.profile);
   const coherence = coherenceHtml(d, txs);
   const catRows = Object.entries(d.parCat).filter(([c]) => E.CAT_GRP[c] !== 'epargne').sort((a, b) => b[1] - a[1]).slice(0, 10).map(([c, v]) => ({ l: E.CAT_LABELS[c] || c, v, c: PALETTE[E.CAT_GRP[c]] || '#64748b' }));
   const reste = Math.max(0, d.revenus - d.depenses - Math.max(0, d.epargneNette));
@@ -2303,10 +2399,11 @@ function renderSynthese() {
       ${kpi('Revenus mensuels', eur(d.revenus, 0), d.revenusDeclares ? `déclarés · détectés ${eur(d.revenusDetectes, 0)}` : 'détectés sur les relevés')}
       ${kpi('Charges contraintes', eur(d.contraintes + d.frais, 0), pct((d.contraintes + d.frais) / (d.revenus || 1)) + ' des revenus')}
       ${kpi('Reste à vivre', eur(d.resteAVivre, 0), `${eur(d.resteAVivreUC, 0)} par unité de consommation (${d.uc.toFixed(1)} UC)`, d.resteAVivre > 0 ? 'blue' : 'red')}
-      ${kpi("Capacité d'épargne", eur(d.capaciteEpargne, 0) + '<span class="text-sm font-normal">/mois</span>', `taux d'épargne ${pct(d.tauxEpargne)}`, d.capaciteEpargne >= 0 ? 'emerald' : 'red')}
+      ${kpi("Capacité d'épargne", eur(d.capaciteEpargne, 0) + '<span class="text-sm font-normal">/mois</span>', `un mois normal · taux ${pct(d.tauxEpargne)}${d.exceptionnel >= 5 ? ` · ${eur(d.capaciteApresExceptionnel, 0)} après les dépenses exceptionnelles` : ''}`, d.capaciteEpargne >= 0 ? 'emerald' : 'red')}
       ${kpi('Taux d\'endettement', pct(d.tauxEndettement), `seuil recommandé ${pct(E.CONFIG.seuilEndettement)}`, d.tauxEndettement > E.CONFIG.seuilEndettement ? 'red' : 'slate')}
     </div>
     ${clairHtml(d, txs)}
+    ${actionsHtml(d, txs, recurring)}
     ${coherence}
     ${cl ? card(`<h2 class="font-semibold mb-2">Colocation : équilibre des remboursements</h2>
       <p class="text-xs text-slate-500 mb-3">Votre budget ne compte que votre quote-part des dépenses communes. Les virements Tricount servent à régler la différence : ils sont exclus des revenus et des dépenses, et contrôlés ici.</p>
@@ -2425,6 +2522,7 @@ function reportBody() {
   const r = (l, v) => `<tr><td>${l}</td><td class="r"><b>${v}</b></td></tr>`;
   return `<h1>Mon audit budget${S.auditNom ? ' — ' + esc(S.auditNom) : ''}</h1><p class="m">Établi le ${new Date().toLocaleDateString('fr-FR')} sur ${d.nbMois} mois de relevés · document personnel</p>
 <h2>Synthèse</h2><div class="ks"><div class="k">Revenus<b>${eur(d.revenus, 0)}</b></div><div class="k">Charges contraintes<b>${eur(d.contraintes + d.frais, 0)}</b></div><div class="k">Reste à vivre<b>${eur(d.resteAVivre, 0)}</b></div><div class="k">Capacité d'épargne<b>${eur(d.capaciteEpargne, 0)}</b></div><div class="k">Score de fuite<b>${plan.score}/100</b></div></div>
+${(() => { const b = bilanClair(d, compute().txs), li = (t, L) => L.length ? `<h3>${t}</h3><ul>${L.map(x => `<li>${x}</li>`).join('')}</ul>` : ''; return `<h2>En clair</h2><p>${b.verdict}</p>${li('Ce qui rentre', b.R)}${li('Ce qui est fixe', b.F)}${li('Ce qui varie', b.V)}${li('Le résultat', b.B)}`; })()}
 <h2>Plan d'économies : ${eur(plan.totalMensuel)}/mois, ${eur(plan.totalAnnuel, 0)}/an</h2><table>${plan.items.map(i => `<tr><td><b>${esc(i.action)}</b><br><small>${esc(i.motif)}</small></td><td class="r">${i.mensuel ? eur(i.mensuel) + '/mois' : ''}${i.ponctuel ? ' ' + eur(i.ponctuel) : ''}</td></tr>`).join('') || '<tr><td>Rien à optimiser.</td></tr>'}</table>
 <h2>Prélèvements récurrents</h2><table><tr><th>Prestataire</th><th>Rythme</th><th class="r">€/mois</th></tr>${recurring.map(x => `<tr><td>${esc(x.merchant)}<br><small>${esc(x.catLabel)}</small></td><td>${x.periodicite}</td><td class="r">${eur(x.mensuel * x.part, 2)}</td></tr>`).join('')}</table>
 ${anomalies.length ? `<h2>Anomalies</h2><table>${anomalies.map(a => `<tr><td><b>${esc(a.titre)}</b><br><small>${esc(a.detail)}</small></td></tr>`).join('')}</table>` : ''}
@@ -2503,7 +2601,7 @@ $('#btnMenu').onclick = async () => {
     ${S.raw.length ? '<button class="btn-ghost w-full justify-center" id="m6">📋 Copier le diagnostic (pour signaler un problème)</button>' : ''}
     <button class="btn-ghost w-full justify-center !text-red-600" id="m3">🗑 Tout effacer</button>
     <button class="btn-ghost w-full justify-center" id="m4">Fermer</button>
-    <p class="text-[11px] text-slate-400 text-center">Version du 16/11 15:30</p></div></div>`;
+    <p class="text-[11px] text-slate-400 text-center">Version du 16/11 16:30</p></div></div>`;
   const close = () => $('#modal-root').innerHTML = '';
   $('#mbg').onclick = e => { if (e.target.id === 'mbg') close(); };
   $('#m1').onclick = () => { close(); goTo('accueil'); };
